@@ -1,0 +1,24 @@
+{
+  "name": "account-buy-sell",
+  "version": "1.0.0",
+  "description": "Express server with Telegram bot integration",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "generate": "drizzle-kit generate",
+    "migrate": "node db/migrate.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "drizzle-orm": "^0.43.1",
+    "express": "^4.18.2",
+    "pg": "^8.16.0",
+    "telegraf": "^4.15.3"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.1",
+    "nodemon": "^3.1.10"
+  }
+}
