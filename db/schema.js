@@ -8,6 +8,7 @@ const users = pgTable('users', {
     account_holder_name: text('account_holder_name'),
     bank_name: text('bank_name'),
     account_number: text('account_number'),
+    balance: integer('balance').default(0),
 });
 
 const accounts = pgTable('accounts', {

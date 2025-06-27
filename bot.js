@@ -119,6 +119,41 @@ bot.command('about', (ctx) => {
   ctx.reply(aboutMessage);
 });
 
+bot.command('balance', async (ctx) => {
+  const { user } = ctx.session;
+  if (!user || !user.id) {
+    return ctx.reply('You are not logged in. Please use /start to log in.');
+  }
+
+  try {
+    const apiUrl = process.env.API_URL || 'http://localhost:3001';
+    const response = await fetch(`${apiUrl}/users/${user.id}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      const userData = await response.json();
+      const balanceMessage = `💰 Your current balance: ${userData.balance} ETB`;
+      
+      const withdrawButton = {
+        inline_keyboard: [
+          [{ text: '💳 Withdraw Balance', callback_data: 'withdraw_balance' }]
+        ]
+      };
+
+      ctx.reply(balanceMessage, { reply_markup: withdrawButton });
+    } else {
+      ctx.reply('Failed to fetch balance. Please try again later.');
+    }
+  } catch (error) {
+    console.error('Error fetching balance:', error);
+    ctx.reply('An error occurred while fetching your balance.');
+  }
+});
+
 const ITEMS_PER_PAGE = 5;
 
 async function sendOrdersPage(ctx, title = '📄 Your Orders', edit = false) {
@@ -546,22 +581,15 @@ bot.on('callback_query', async (ctx, next) => {
       // Store account ID in session for later use
       ctx.session.pendingAccountId = accountId;
 
-      // Fetch seller's bank details
-      const sellerRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/users/${account.owner_id}`);
-      if (!sellerRes.ok) {
-        return await ctx.reply('Could not fetch seller details. Please try again later.');
-      }
-      const sellerData = await safeJsonParse(sellerRes);
+      // Always show static escrow Telebirr account details
+      const bankDetails =
+        `Please make the payment of *${account.price.toLocaleString()} ETB* to the following escrow account:\n\n` +
+        `*Bank Name:* Telebirr\n` +
+        `*Account Number:* 0907608839\n` +
+        `*Account Name:* Kaleb Mate\n\n` +
+        `After payment, please send a Receipt Number to proceed with the order.\n\nMake your payments using Telebirr`;
 
-      if (sellerData && sellerData.account_holder_name && sellerData.bank_name && sellerData.account_number) {
-        const bankDetails = 
-          `Please make the payment of *${account.price.toLocaleString()} ETB* to the following bank account:\n\n*Bank Name:* ${sellerData.bank_name}\n*Account Number:* ${sellerData.account_number}\n*Account Name:* ${sellerData.account_holder_name}\n\nAfter payment, please send a screenshot to proceed with the order.`
-
-        await ctx.reply(bankDetails, { parse_mode: 'Markdown' });
-      } else {
-        await ctx.reply('The seller has not provided their bank details yet. Please check back later.');
-      }
-
+      await ctx.reply(bankDetails, { parse_mode: 'Markdown' });
       return;
     }
 
@@ -831,6 +859,31 @@ bot.action(/delete_account_(.+)/, async (ctx) => {
   } catch (e) {
     console.error('Error deleting account:', e);
     await ctx.reply('❌ An error occurred while deleting the account.');
+  }
+});
+
+// Withdraw balance action
+bot.action('withdraw_balance', async (ctx) => {
+  ctx.answerCbQuery('Processing withdrawal request...');
+  try {
+    const { user } = ctx.session;
+    if (!user || !user.id) {
+      return ctx.reply('You are not logged in. Please use /start to log in.');
+    }
+    const apiUrl = process.env.API_URL || 'http://localhost:3001';
+    const response = await fetch(`${apiUrl}/users/${user.id}`);
+    if (!response.ok) {
+      return ctx.reply('Failed to fetch balance. Please try again later.');
+    }
+    const userData = await response.json();
+    if (userData.balance < 100) {
+      return ctx.reply('❌ Not enough funds to withdraw. Minimum is 100 ETB.');
+    }
+    // Here you can implement your withdrawal logic (e.g., ask for withdrawal details, process payout, etc.)
+    return ctx.reply('✅ Withdrawal initiated! Our team will process your request soon.');
+  } catch (error) {
+    console.error('Error handling withdrawal:', error);
+    ctx.reply('An error occurred while processing your withdrawal.');
   }
 });
 

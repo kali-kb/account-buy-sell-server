@@ -36,6 +36,13 @@
       "when": 1750096848871,
       "tag": "0004_dizzy_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1750887606825,
+      "tag": "0005_military_lady_vermin",
+      "breakpoints": true
     }
   ]
 }
