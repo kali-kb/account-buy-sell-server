@@ -438,22 +438,54 @@ bot.action(/transfer_complete_(.+)/, async (ctx) => {
       return ctx.answerCbQuery('Error: Could not update order status.', { show_alert: true });
     }
 
-    // 2. Notify seller
-    await ctx.editMessageText('🎉 Transfer Complete! The order has been marked as completed. Thank you for your business.');
-    
-    // 3. Notify buyer
+
+    // 2. Fetch order details to get seller ID from account owner
     const orderRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/orders/${orderId}`);
     if (!orderRes.ok) {
-      console.error('Failed to fetch order details for buyer notification');
+      console.error('Failed to fetch order details after update');
       return;
     }
     const orderData = await safeJsonParse(orderRes);
     if (!orderData) {
-      console.error('Failed to parse order details for buyer notification');
+      console.error('Failed to parse order details after update');
       return;
     }
     const { buyer, account } = orderData;
 
+    // 3. Credit seller's balance (account owner)
+    const sellerId = account.owner_id;
+    try {
+      // Fetch seller's current balance
+      const sellerRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/users/${sellerId}`);
+      // console.log('sellerRes', sellerRes)
+      if (!sellerRes.ok) {
+        throw new Error('Failed to fetch seller data');
+      }
+      const sellerData = await safeJsonParse(sellerRes);
+      const currentBalance = sellerData.balance || 0;
+      const newBalance = currentBalance + account.price;  // Use account price instead of order amount
+      console.log(`Crediting seller ${sellerId} with amount ${account.price}. Current balance: ${currentBalance}, New balance: ${newBalance}`);
+      // Update seller's balance - send only balance field
+      const updateBalanceRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/users/${sellerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ balance: newBalance })
+      });
+
+      if (!updateBalanceRes.ok) {
+        throw new Error('Failed to update seller balance');
+      }
+      // Log successful update
+      console.log(`Updated seller ${sellerId} balance to ${newBalance}`);
+    } catch (balanceError) {
+      console.error('Error crediting seller balance:', balanceError);
+      await ctx.reply(`⚠️ Account transfer completed but failed to credit seller's balance. Please contact support.`);
+    }
+
+    // 4. Notify seller
+    await ctx.editMessageText('🎉 Transfer Complete! The seller\'s balance has been credited. Thank you for your business.');
+
+    // 5. Notify buyer
     const buyerMessage = `🎉 The account "${account.name}" has been successfully transferred to you! The order is now complete.`;
     
     try {
@@ -641,7 +673,7 @@ bot.on('callback_query', async (ctx, next) => {
     }
 
     const order = responseData;
-    
+
     await ctx.answerCbQuery('Order created successfully!');
     await ctx.editMessageText(
       ctx.callbackQuery.message.text + 
@@ -830,10 +862,10 @@ bot.action(/confirm_delete_(.+)/, async (ctx) => {
 
     await ctx.editMessageText('✅ Account successfully deleted from the marketplace.');
     await ctx.answerCbQuery('Account deleted successfully');
-    
+
   } catch (e) {
     console.error('Error in confirm_delete action:', e);
-    await ctx.editMessageText('❌ An error occurred while deleting the account.');
+    await ctx.editMessageText('❌ An error occurred while deleting the account.', { show_alert: true });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
 });
@@ -887,6 +919,8 @@ bot.action('withdraw_balance', async (ctx) => {
   }
 });
 
+
+
 // Start the bot
 bot.launch()
   .then(() => {
@@ -904,3 +938,8 @@ process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 module.exports = { bot };
+
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+module.exports = { bot };
+

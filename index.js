@@ -71,6 +71,28 @@ app.get('/users/:id', async (req, res) => {
   }
 })
 
+
+app.put('/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { balance } = req.body;
+
+    console.log('Updating user balance:', id, balance);
+
+    const result = await db.update(users).set({ balance }).where(eq(users.id, id)).returning();
+    console.log('Update result:', result);
+    if (result.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(result[0]);
+  } catch (error) {
+    console.error("Error updating user balance:", error);
+    res.status(500).json({ error: "Failed to update user balance" });
+  }
+});
+
+
 app.put('/users/:id/bank-details', async (req, res) => {
   try {
     const { id } = req.params;
