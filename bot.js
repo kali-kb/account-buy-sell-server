@@ -370,11 +370,10 @@ bot.hears('For Selling', (ctx) => {
 // Handle Rules and guidelines button
 bot.hears('📄 Rules and guidelines', (ctx) => {
   const rulesMessage = `📜 Rules and Guidelines\n\n` +
-    `1. All transactions must be conducted through the bot's interface\n` +
-    `2. No direct payments outside the platform\n` +
-    `3. Follow community guidelines and respect other users\n` +
-    `4. Report any suspicious activity immediately\n` +
-    `5. Prices are non-negotiable once listed\n\n` +
+    `1. Do not pay directly to the seller outside the bot, communicating directly with the seller is allowed to access more information about the account but the order and payment for it should go through the bot, We will not be held liable for money lost not following this rule\n` +
+    `2. Follow community guidelines and respect other users\n` +
+    `3. Report any suspicious activity immediately\n` +
+    `4. Prices are non-negotiable once listed\n\n` +
     `For more detailed information, please visit our Telegraph article: [Rules and Guidelines](https://telegra.ph/Rules-and-Guidelines-05-03)`;
   
   ctx.reply(rulesMessage, { parse_mode: 'Markdown' });
@@ -483,7 +482,7 @@ bot.action(/transfer_complete_(.+)/, async (ctx) => {
     }
 
     // 4. Notify seller
-    await ctx.editMessageText('🎉 Transfer Complete! The seller\'s balance has been credited. Thank you for your business.');
+    await ctx.editMessageText('🎉 Transfer Complete! The Your balance has been credited. Thank you for your business.');
 
     // 5. Notify buyer
     const buyerMessage = `🎉 The account "${account.name}" has been successfully transferred to you! The order is now complete.`;

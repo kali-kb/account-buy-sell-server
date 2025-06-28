@@ -5,7 +5,7 @@ const { Pool } = require("pg");
 const cors = require("cors");
 const { drizzle } = require("drizzle-orm/node-postgres");
 const { alias } = require("drizzle-orm/pg-core");
-const { eq, like, ilike, gte, lte, and, or, sql, desc } = require("drizzle-orm");
+const { eq, like, ilike, gte, lte, and, or, sql, desc, inArray } = require("drizzle-orm");
 const { accounts, users, orders, transfers } = require("./db/schema");
 const axios = require("axios");
 
@@ -291,10 +291,10 @@ app.post("/accounts", async (req, res) => {
 //will come to this later
 app.get("/search/accounts", async (req, res) => {
   try {
-    const { query, platform_type, minSubscribers, maxSubscribers, isMonetized, page = 1, limit = 6 } = req.query;
+    const { query, platform_types, minSubscribers, maxSubscribers, isMonetized, creation_year, page = 1, limit = 6 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
     
-    console.log(`[SEARCH] Query: ${query}, Platform: ${platform_type}, Page: ${page}`);
+    console.log(`[SEARCH] Query: ${query}, Platforms: ${platform_types}, Year: ${creation_year}, Page: ${page}`);
     
     let filteredAccounts = db.select().from(accounts);
     let conditions = [];
@@ -302,9 +302,11 @@ app.get("/search/accounts", async (req, res) => {
     if (query) {
       conditions.push(ilike(accounts.name, `%${query}%`));
     }
-    if (platform_type) {
-      const normalizedPlatform = platform_type.toLowerCase();
-      conditions.push(ilike(accounts.platform, normalizedPlatform));
+    if (platform_types) {
+      const types = platform_types.split(',').map(t => t.trim().toLowerCase()).filter(t => t);
+      if (types.length > 0) {
+        conditions.push(inArray(accounts.platform, types));
+      }
     }
     if (minSubscribers) {
       conditions.push(gte(accounts.subscriber_count, parseInt(minSubscribers)));
@@ -314,6 +316,9 @@ app.get("/search/accounts", async (req, res) => {
     }
     if (isMonetized) {
       conditions.push(eq(accounts.is_monetized, isMonetized === 'true'));
+    }
+    if (creation_year) {
+      conditions.push(eq(accounts.creation_year, parseInt(creation_year)));
     }
 
     if (conditions.length > 0) {
@@ -441,7 +446,7 @@ app.post("/orders/verify-payment", async (req, res) => {
     const settledAmount = parseFloat(data.settledAmount.replace(/[^0-9.-]+/g,""));
     const expectedAmount = parseFloat(amount);
 
-    if (data.creditedPartyName !== "Kaleb Mate Megane" || settledAmount < expectedAmount) {
+    if (data.creditedPartyName !== "Ibrahi Ghazali Mohammed" || settledAmount < expectedAmount) {
       console.log(`Verification failed for receipt ${reference}. Expected receiver: "Kaleb Mate Megane", got: "${data.creditedPartyName}". Expected amount: ${expectedAmount}, got: ${settledAmount}`);
       return res.status(400).json({ error: "Payment details mismatch." });
     }
