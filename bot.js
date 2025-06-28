@@ -5,7 +5,7 @@ dotenv.config();
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const MINI_APP_URL = process.env.MINI_APP_URL;
-const REQUIRE_PAYMENT_SCREENSHOT = true; // Flag to toggle payment screenshot verification
+const REQUIRE_PAYMENT_SCREENSHOT = false; // Flag to toggle payment screenshot verification
 bot.use(session());
 
 // Welcome message and main keyboard
@@ -609,170 +609,92 @@ bot.on('callback_query', async (ctx, next) => {
       throw new Error('Failed to check existing orders');
     }
 
-    if (REQUIRE_PAYMENT_SCREENSHOT && !ctx.session.paymentScreenshot) {
-      // Store account ID in session for later use
-      ctx.session.pendingAccountId = accountId;
+    // Store account ID in session for later use
+    ctx.session.pendingAccountId = accountId;
+    ctx.session.pendingAccountPrice = account.price;
 
-      // Always show static escrow Telebirr account details
-      const bankDetails =
+    // Always show static escrow Telebirr account details
+    const bankDetails =
         `Please make the payment of *${account.price.toLocaleString()} ETB* to the following escrow account:\n\n` +
         `*Bank Name:* Telebirr\n` +
         `*Account Number:* 0907608839\n` +
         `*Account Name:* Kaleb Mate\n\n` +
-        `After payment, please send a Receipt Number to proceed with the order.\n\nMake your payments using Telebirr`;
+        `After payment, please send the transaction receipt number to proceed with the order.`;
 
-      await ctx.reply(bankDetails, { parse_mode: 'Markdown' });
-      return;
-    }
+    await ctx.reply(bankDetails, { parse_mode: 'Markdown' });
+    return;
 
-    telegram_user_id = ctx.callbackQuery.from.id.toString();
-    const username = ctx.callbackQuery.from.username || '';
-    userData = await getOrCreateUser(telegram_user_id, username);
-
-    if (!userData?.id) {
-      throw new Error('User data not available');
-    }
-
-    const buyerId = userData.id;
-
-    // Get account details to get the price
-    accountRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/accounts/${accountId}`);
-    if (!accountRes.ok) {
-      throw new Error('Account not found');
-    }
-    accountData = await safeJsonParse(accountRes);
-    account = accountData[0].accounts;
-
-    // Create order using API
-    const response = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        buyer_id: buyerId,
-        account_id: accountId,
-        amount: account.price
-      })
-    });
-
-    const responseData = await safeJsonParse(response);
-    
-    if (!response.ok) {
-      if (response.status === 400 && responseData.error) {
-        // User already has an active order for this account
-        await ctx.answerCbQuery('Order already exists!');
-        await ctx.editMessageText(
-          ctx.callbackQuery.message.text + 
-          '\n\n⚠️ ' + responseData.error + 
-          '\n\nPlease check your orders list.'
-        );
-        return;
-      }
-      throw new Error('Failed to create order');
-    }
-
-    const order = responseData;
-
-    await ctx.answerCbQuery('Order created successfully!');
-    await ctx.editMessageText(
-      ctx.callbackQuery.message.text + 
-      '\n\n✅ Order created!\nOrder ID: ' + order.id
-    );
-    
+    // The rest of the logic is now handled by the text handler below
   } catch (error) {
-    console.error('Error creating order:', error);
-    await ctx.answerCbQuery('Failed to create order. Please try again.');
-    await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ Failed to create order. Please try again later.');
+    console.error('Error in order callback:', error);
+    await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
 });
 
-// Handle payment screenshot
-bot.on('photo', async (ctx) => {
-  // Check if we're waiting for a payment screenshot
-  if (!ctx.session?.pendingAccountId) {
+// Handle receipt number submission
+bot.on('text', async (ctx) => {
+  if (!ctx.session?.pendingAccountId || !ctx.message.text) {
     return;
   }
 
-  try {
-    // Store the screenshot file_id in session
-    ctx.session.paymentScreenshot = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-    const accountId = ctx.session.pendingAccountId;
+  const receiptNo = ctx.message.text.trim();
+  const accountId = ctx.session.pendingAccountId;
+  const accountPrice = ctx.session.pendingAccountPrice;
 
-    // Get user data from Telegram ID
+  try {
+    await ctx.reply('🔍 Verifying your payment, please wait...');
+
+    // 1. Verify payment with the external API
+    const verificationResponse = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders/verify-payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: receiptNo, amount: accountPrice })
+    });
+
+    if (!verificationResponse.ok) {
+      const errorData = await safeJsonParse(verificationResponse);
+      return ctx.reply(`❌ Payment verification failed: ${errorData.error || 'Unknown error'}`);
+    }
+
+    // 2. Get user data
     const telegram_user_id = ctx.from.id.toString();
     const username = ctx.from.username || '';
-    let userData = null;
+    const userRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/users/by-telegram/${telegram_user_id}`);
+    if (!userRes.ok) throw new Error('Failed to get user data');
+    const userData = await safeJsonParse(userRes);
+    if (!userData?.id) throw new Error('User data not available');
 
-    // Try to get user from backend
-    const res = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/users/by-telegram/${telegram_user_id}`);
-    
-    if (res.ok) {
-      userData = await safeJsonParse(res);
-      if (!userData) {
-        // User not found, create
-        const createRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/users`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ telegram_user_id, username })
-        });
-        if (createRes.ok) {
-          userData = await safeJsonParse(createRes);
-        } else {
-          throw new Error('Failed to create user');
-        }
-      }
-    } else {
-      throw new Error('Failed to get user data');
-    }
-
-    if (!userData?.id) {
-      throw new Error('User data not available');
-    }
-    
-    const buyerId = userData.id;
-
-    // Get account details to get the price
-    const accountRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/accounts/${accountId}`);
-    if (!accountRes.ok) {
-      throw new Error('Account not found');
-    }
-    const accountData = await safeJsonParse(accountRes);
-    const account = accountData[0].accounts;
-    
-    // Create order using API
-    const response = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders`, {
+    // 3. Create the order
+    const orderResponse = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        buyer_id: buyerId,
+        buyer_id: userData.id,
         account_id: accountId,
-        amount: account.price,
-        payment_screenshot: ctx.session.paymentScreenshot
+        amount: accountPrice,
+        receipt_no: receiptNo
       })
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to create order');
+    if (!orderResponse.ok) {
+      const errorData = await safeJsonParse(orderResponse);
+      throw new Error(errorData.error || 'Failed to create order');
     }
 
-    const order = await safeJsonParse(response);
-    
-    // Clear the session data
+    const order = await safeJsonParse(orderResponse);
+
+    // 4. Clean up session and notify user
     delete ctx.session.pendingAccountId;
-    delete ctx.session.paymentScreenshot;
-    
-    await ctx.reply('✅ Order created successfully!');
-    
+    delete ctx.session.pendingAccountPrice;
+
+    await ctx.reply(`✅ Payment verified and order created successfully!\nOrder ID: ${order.id}`);
+
   } catch (error) {
-    console.error('Error creating order:', error);
-    await ctx.reply('❌ Failed to create order. Please try again later.');
-    
-    // Clear the session data on error
+    console.error('Error processing receipt:', error);
+    await ctx.reply(`❌ An error occurred: ${error.message}`);
+    // Clear session on error
     delete ctx.session.pendingAccountId;
-    delete ctx.session.paymentScreenshot;
+    delete ctx.session.pendingAccountPrice;
   }
 });
 

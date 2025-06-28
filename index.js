@@ -7,6 +7,7 @@ const { drizzle } = require("drizzle-orm/node-postgres");
 const { alias } = require("drizzle-orm/pg-core");
 const { eq, like, ilike, gte, lte, and, or, sql, desc } = require("drizzle-orm");
 const { accounts, users, orders, transfers } = require("./db/schema");
+const axios = require("axios");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -406,9 +407,57 @@ app.get("/orders/check", async (req, res) => {
   }
 });
 
+app.post("/orders/verify-payment", async (req, res) => {
+  try {
+    const { reference, amount } = req.body;
+    const apiKey = process.env.RECEIPT_VERIFIER_API_KEY;
+
+    if (!reference || !amount) {
+      return res.status(400).json({ error: "Receipt number and amount are required" });
+    }
+
+    if (!apiKey) {
+      console.error("RECEIPT_VERIFIER_API_KEY is not set.");
+      return res.status(500).json({ error: "Server configuration error." });
+    }
+
+    const verificationResponse = await axios.post(
+      "https://verifyapi.leulzenebe.pro/verify-telebirr",
+      { reference },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+        },
+      }
+    );
+
+    const { success, data } = verificationResponse.data;
+
+    if (!success) {
+      return res.status(400).json({ error: "Payment verification failed", details: data });
+    }
+    
+    const settledAmount = parseFloat(data.settledAmount.replace(/[^0-9.-]+/g,""));
+    const expectedAmount = parseFloat(amount);
+
+    if (data.creditedPartyName !== "Kaleb Mate Megane" || settledAmount < expectedAmount) {
+      console.log(`Verification failed for receipt ${reference}. Expected receiver: "Kaleb Mate Megane", got: "${data.creditedPartyName}". Expected amount: ${expectedAmount}, got: ${settledAmount}`);
+      return res.status(400).json({ error: "Payment details mismatch." });
+    }
+
+    res.json({ success: true, verificationData: data });
+
+  } catch (error) {
+    console.error("Error verifying payment:", error.response ? error.response.data : error.message);
+    res.status(500).json({ error: "Failed to verify payment" });
+  }
+});
+
+
 app.post("/orders", async (req, res) => {
   try {
-    const { buyer_id, account_id, amount } = req.body;
+    const { buyer_id, account_id, amount, receipt_no } = req.body;
     
     // Check if user already has an active order for this account
     const existingOrder = await db.select()
@@ -435,6 +484,7 @@ app.post("/orders", async (req, res) => {
       buyer_id,
       account_id,
       amount,
+      receipt_no,
       status: 'pending',
       created_at: new Date(),
       updated_at: new Date()

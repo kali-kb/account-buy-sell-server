@@ -33,6 +33,7 @@ const orders = pgTable('orders', {
     account_id: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
     amount: integer('amount').notNull(), // Consider removing this as price is in accounts table
     status: text('status', { enum: ['pending', 'completed', 'cancelled', 'failed'] }).notNull().default('pending'),
+    receipt_no: text('receipt_no'),
     created_at: timestamp('created_at').defaultNow(),
     updated_at: timestamp('updated_at').defaultNow(),
 });
