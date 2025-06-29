@@ -46,6 +46,9 @@ app.post('/users', async (req, res) => {
     const existing = await db.select().from(users).where(eq(users.telegram_user_id, telegram_user_id));
     if (existing.length === 0) {
       // create user
+      if (!username) {
+        return res.status(400).json({ error: "Username is required to create an account." });
+      }
       const result = await db.insert(users).values({
         telegram_user_id,
         username,

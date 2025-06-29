@@ -40,46 +40,39 @@ bot.command('start', async (ctx) => {
   let userData = null;
 
   try {
-    // Try to get user from backend
     const res = await fetch(`${process.env.API_URL || `http://localhost:3001`}/users/by-telegram/${telegram_user_id}`);
-    console.log(res)
+
     if (res.ok) {
-      userData = await safeJsonParse(res);
-      if (!userData) {
-        // User not found, create
-        const createRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/users`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ telegram_user_id, username })
-        });
-        if (createRes.ok) {
-          userData = await safeJsonParse(createRes);
-          if (userData) {
-            console.log('User created:', userData);
-          }
-        } else {
-          const err = await safeJsonParse(createRes);
-          console.error('Failed to create user:', err);
-        }
-      } else {
-        console.log('User exists:', userData);
-      }
-    } else {
-      // If not found, create
-      const createRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telegram_user_id, username })
-      });
-      if (createRes.ok) {
-        userData = await safeJsonParse(createRes);
+        userData = await safeJsonParse(res);
         if (userData) {
-          console.log('User created:', userData);
+            console.log('User exists:', userData);
         }
-      } else {
-        const err = await safeJsonParse(createRes);
-        console.error('Failed to create user:', err);
-      }
+    } else if (res.status === 404) {
+        // User not found, create one.
+        const createRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/users`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ telegram_user_id, username })
+        });
+
+        if (createRes.ok) {
+            userData = await safeJsonParse(createRes);
+            if (userData) {
+                console.log('User created:', userData);
+            }
+        } else {
+            const err = await safeJsonParse(createRes);
+            console.error('Failed to create user:', err);
+            // Check for specific username error from backend
+            if (createRes.status === 400 && err?.error?.includes("Username is required")) {
+                await ctx.reply('Welcome! To use this bot, you must have a public Telegram username. Please set one in your Telegram settings and then type /start again.');
+                return; // Stop processing and don't show the main keyboard
+            }
+        }
+    } else {
+        // Handle other HTTP errors
+        const err = await safeJsonParse(res);
+        console.error('Failed to fetch user:', err);
     }
   } catch (e) {
     console.error('Error creating or fetching user on start:', e);
