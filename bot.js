@@ -499,8 +499,8 @@ bot.action(/cancel_order_(.+)/, async (ctx) => {
   try {
     await ctx.answerCbQuery('Cancelling order...');
     // Call DELETE endpoint
-    const res = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders/${orderId}`, {
-      method: 'DELETE',
+    const res = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders/${orderId}/cancel`, {
+      method: 'POST',
     });
     if (!res.ok) {
       const err = await safeJsonParse(res);
@@ -554,24 +554,32 @@ bot.on('callback_query', async (ctx, next) => {
       ctx.session = {};
     }
     ctx.answerCbQuery('Processing your order...');
-    // Extract account ID from callback data
     const accountId = callbackData.split('_')[2];
 
-    // Get account details to get the price and check ownership
-    let accountRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/accounts/${accountId}`);
-    if (!accountRes.ok) {
-      return await ctx.reply('Account not found.');
-    }
-    let accountData = await safeJsonParse(accountRes);
-    let account = accountData[0].accounts;
-
     // Get current user's data
-    let telegram_user_id = ctx.from.id.toString();
+    const telegram_user_id = ctx.from.id.toString();
     const userRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/users/by-telegram/${telegram_user_id}`);
     if (!userRes.ok) {
       return await ctx.reply('Could not identify you. Please /start the bot.');
     }
-    let userData = await safeJsonParse(userRes);
+    const userData = await safeJsonParse(userRes);
+
+    // Attempt to reserve the account
+    const reserveRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/accounts/${accountId}/reserve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buyer_id: userData.id })
+    });
+
+    if (!reserveRes.ok) {
+      const errorData = await safeJsonParse(reserveRes);
+      await ctx.answerCbQuery(errorData.details || 'Sorry, this account is no longer available.', { show_alert: true });
+      return await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n*This account has been reserved or sold.*', {
+        parse_mode: 'Markdown'
+      });
+    }
+
+    const { account } = await safeJsonParse(reserveRes);
 
     // Check if the buyer is the owner
     if (userData && userData.id === account.owner_id) {

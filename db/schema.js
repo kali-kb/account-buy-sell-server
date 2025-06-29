@@ -19,6 +19,7 @@ const accounts = pgTable('accounts', {
     url: text('url').notNull(),
     price: integer('price').notNull(),
     is_active: boolean('is_active').notNull().default(true),
+    status: text('status', { enum: ['available', 'pending', 'sold'] }).notNull().default('available'),
     subscriber_count: integer('subscriber_count').notNull(),
     creation_year: integer('creation_year'),
     is_monetized: boolean('is_monetized'),

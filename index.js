@@ -176,11 +176,12 @@ app.get('/accounts', async (req, res) => {
     console.log(`[ACCOUNTS] Fetching page ${page}, limit ${limit}, offset ${offset}`);
 
     // Get total count for pagination info
-    const totalCountResult = await db.select({ count: sql`count(*)` }).from(accounts);
+    const totalCountResult = await db.select({ count: sql`count(*)` }).from(accounts).where(eq(accounts.status, 'available'));
     const totalCount = parseInt(totalCountResult[0].count);
     
     // Get paginated results with consistent ordering
     const result = await db.select().from(accounts)
+      .where(eq(accounts.status, 'available'))
       .orderBy(desc(accounts.created_at), accounts.id) // Added secondary sort for consistency
       .limit(limit)
       .offset(offset);
@@ -300,7 +301,7 @@ app.get("/search/accounts", async (req, res) => {
     console.log(`[SEARCH] Query: ${query}, Platforms: ${platform_types}, Year: ${creation_year}, Page: ${page}`);
     
     let filteredAccounts = db.select().from(accounts);
-    let conditions = [];
+    let conditions = [eq(accounts.status, 'available')];
     
     if (query) {
       conditions.push(ilike(accounts.name, `%${query}%`));
@@ -372,6 +373,53 @@ app.get("/accounts/:id", async (req, res) => {
   } catch (error) {
     console.error("Error fetching account:", error);
     res.status(500).json({ error: "Failed to fetch account" });
+  }
+});
+app.post("/accounts/:id/reserve", async (req, res) => {
+  const { id } = req.params;
+  const { buyer_id } = req.body;
+
+  if (!buyer_id) {
+    return res.status(400).json({ error: "Buyer ID is required to reserve an account." });
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const account = await tx.select().from(accounts).where(eq(accounts.id, id)).for('update');
+
+      if (account.length === 0 || account[0].status !== 'available') {
+        throw new Error("Account is not available for reservation.");
+      }
+
+      const updatedAccount = await tx.update(accounts)
+        .set({ status: 'pending' })
+        .where(eq(accounts.id, id))
+        .returning();
+
+      // Set a timeout to release the reservation
+      setTimeout(async () => {
+        const currentAccount = await db.select().from(accounts).where(eq(accounts.id, id));
+        if (currentAccount[0] && currentAccount[0].status === 'pending') {
+          // Check if an order was created in the meantime
+           const pendingOrder = await db.select().from(orders).where(and(eq(orders.account_id, id), eq(orders.status, 'pending')));
+           if(pendingOrder.length === 0){
+             await db.update(accounts).set({ status: 'available' }).where(eq(accounts.id, id));
+             console.log(`Reservation for account ${id} has expired and it has been made available again.`);
+           }
+        }
+      }, 10 * 60 * 1000); // 10 minutes
+
+      return updatedAccount[0];
+    });
+
+    res.json({ success: true, account: result });
+
+  } catch (error) {
+    console.error("Error reserving account:", error);
+    res.status(error.message.includes("Account is not available") ? 409 : 500).json({
+      error: "Failed to reserve account",
+      details: error.message
+    });
   }
 });
 
@@ -464,31 +512,12 @@ app.post("/orders/verify-payment", async (req, res) => {
 
 
 app.post("/orders", async (req, res) => {
+  const { buyer_id, account_id, amount, receipt_no } = req.body;
+
   try {
-    const { buyer_id, account_id, amount, receipt_no } = req.body;
-    
-    // Check if user already has an active order for this account
-    const existingOrder = await db.select()
-      .from(orders)
-      .where(
-        and(
-          eq(orders.buyer_id, buyer_id),
-          eq(orders.account_id, account_id),
-          or(
-            eq(orders.status, 'pending'),
-            eq(orders.status, 'in_progress')
-          )
-        )
-      )
-      .limit(1);
-
-    if (existingOrder.length > 0) {
-      return res.status(400).json({ 
-        error: "You already have an active order for this account" 
-      });
-    }
-
-    const result = await db.insert(orders).values({
+    // The account is already reserved (status: 'pending') by the bot action.
+    // We just need to create the order record.
+    const newOrder = await db.insert(orders).values({
       buyer_id,
       account_id,
       amount,
@@ -498,12 +527,13 @@ app.post("/orders", async (req, res) => {
       updated_at: new Date()
     }).returning();
     
-    res.status(201).json(result[0]);
+    res.status(201).json(newOrder[0]);
+
   } catch (error) {
     console.error("Error creating order:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to create order",
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -578,9 +608,11 @@ app.put("/orders/:id", async (req, res) => {
       .where(eq(orders.id, id))
       .returning();
 
-    // If status is completed, clean up after a short delay to allow notifications to be sent
+    // If status is completed, mark account as sold and then clean up
     if (status === 'completed') {
       const order = result[0];
+      await db.update(accounts).set({ status: 'sold' }).where(eq(accounts.id, order.account_id));
+      
       // Set a small delay to ensure notifications are sent before deletion
       setTimeout(async () => {
         try {
@@ -597,6 +629,36 @@ app.put("/orders/:id", async (req, res) => {
     res.json(result[0]);
   } catch (error) {
     console.error("Error updating order:", error);
+app.post("/orders/:id/cancel", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.transaction(async (tx) => {
+      // 1. Get the order
+      const orderArr = await tx.select().from(orders).where(eq(orders.id, id));
+      if (orderArr.length === 0) {
+        throw new Error("Order not found");
+      }
+      const order = orderArr[0];
+
+      // 2. Update the account status back to 'available'
+      await tx.update(accounts).set({ status: 'available' }).where(eq(accounts.id, order.account_id));
+      
+      // 3. Delete the order
+      const deletedOrder = await tx.delete(orders).where(eq(orders.id, id)).returning();
+      
+      return deletedOrder[0];
+    });
+
+    res.json({ success: true, cancelled_order: result });
+
+  } catch (error) {
+    console.error("Error cancelling order:", error);
+    res.status(error.message.includes("Order not found") ? 404 : 500).json({ 
+      error: "Failed to cancel order",
+      details: error.message 
+    });
+  }
+});
     res.status(500).json({ error: "Failed to update order" });
   }
 });

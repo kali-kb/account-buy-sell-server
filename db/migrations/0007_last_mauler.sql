@@ -1,0 +1,1 @@
+ALTER TABLE "accounts" ADD COLUMN "status" text DEFAULT 'available' NOT NULL;
