@@ -30,6 +30,11 @@ const safeJsonParse = async (response) => {
   }
 };
 
+// Helper function to escape Markdown special characters
+function escapeMarkdown(text) {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
+}
+
 // Start command with welcome message and keyboard
 bot.command('start', async (ctx) => {
   const welcomeMessage = `Welcome to the Account Trading Bot! 🎉\n\n` +
@@ -188,16 +193,16 @@ async function sendOrdersPage(ctx, title = '📄 Your Orders', edit = false) {
     const { order, account, user, seller } = item;
     const date = new Date(order.created_at).toLocaleDateString();
 
-    let orderInfo = `🧾 *Account:* ${account.name}\n`;
+    let orderInfo = `🧾 *Account:* ${escapeMarkdown(account.name)}\n`;
     if (isSale) {
-      orderInfo += `👤 *Buyer:* @${user.username}\n`;
+      orderInfo += `👤 *Buyer:* @${escapeMarkdown(user.username)}\n`;
     } else {
       const sellerUsername = seller ? seller.username : 'N/A';
-      orderInfo += `👤 *Seller:* @${sellerUsername}\n`;
+      orderInfo += `👤 *Seller:* @${escapeMarkdown(sellerUsername)}\n`;
     }
-    orderInfo += `💰 *Amount:* ${order.amount} ETB\n`;
-    orderInfo += `💳 *Status:* ${order.status}\n`;
-    orderInfo += `📅 *Date:* ${date}`;
+    orderInfo += `💰 *Amount:* ${escapeMarkdown(order.amount.toString())} ETB\n`;
+    orderInfo += `💳 *Status:* ${escapeMarkdown(order.status)}\n`;
+    orderInfo += `📅 *Date:* ${escapeMarkdown(date)}`;
 
     const keyboard = [];
     if (isSale && order.status === 'pending') {
@@ -818,27 +823,53 @@ bot.action(/delete_account_(.+)/, async (ctx) => {
 
 // Withdraw balance action
 bot.action('withdraw_balance', async (ctx) => {
-  ctx.answerCbQuery('Processing withdrawal request...');
-  try {
+    await ctx.answerCbQuery('Processing withdrawal...');
     const { user } = ctx.session;
+    
     if (!user || !user.id) {
-      return ctx.reply('You are not logged in. Please use /start to log in.');
+        return ctx.reply('You are not logged in. Please use /start to log in.');
     }
-    const apiUrl = process.env.API_URL || 'http://localhost:3001';
-    const response = await fetch(`${apiUrl}/users/${user.id}`);
-    if (!response.ok) {
-      return ctx.reply('Failed to fetch balance. Please try again later.');
+
+    try {
+        const apiUrl = process.env.API_URL || 'http://localhost:3001';
+        const response = await fetch(`${apiUrl}/users/${user.id}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (response.ok) {
+            const userData = await response.json();
+            
+            // Check if balance is sufficient
+            if (userData.balance < 100) {
+                return ctx.reply(`❌ Minimum withdrawal threshold is 100 ETB. Your current balance is ${userData.balance} ETB.`);
+            }
+            
+            // Create withdrawal record
+            const withdrawalRes = await fetch(`${apiUrl}/withdrawals`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: user.id,
+                    amount: userData.balance
+                })
+            });
+            
+            if (withdrawalRes.ok) {
+                await ctx.reply('✅ Your funds will be sent to your registered bank account in 24 hours upto 7 days');
+            } else {
+                const errorData = await withdrawalRes.json();
+                ctx.reply(`❌ Failed to process withdrawal: ${errorData.error || 'Unknown error'}`);
+            }
+        } else {
+            ctx.reply('Failed to fetch your balance. Please try again later.');
+        }
+    } catch (error) {
+        console.error('Error processing withdrawal:', error);
+        ctx.reply('An error occurred while processing your withdrawal.');
     }
-    const userData = await response.json();
-    if (userData.balance < 100) {
-      return ctx.reply('❌ Not enough funds to withdraw. Minimum is 100 ETB.');
-    }
-    // Here you can implement your withdrawal logic (e.g., ask for withdrawal details, process payout, etc.)
-    return ctx.reply('✅ Withdrawal initiated! Our team will process your request soon.');
-  } catch (error) {
-    console.error('Error handling withdrawal:', error);
-    ctx.reply('An error occurred while processing your withdrawal.');
-  }
 });
 
 

@@ -48,11 +48,21 @@ const transfers = pgTable('transfers', {
     updated_at: timestamp('updated_at').defaultNow(),
 });
 
+const withdrawals = pgTable('withdrawals', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    user_id: uuid('user_id').notNull().references(() => users.id),
+    amount: integer('amount').notNull(),
+    status: text('status', { enum: ['pending', 'completed', 'rejected'] }).notNull().default('pending'),
+    created_at: timestamp('created_at').defaultNow(),
+    updated_at: timestamp('updated_at').defaultNow(),
+});
+
 // Define relations
 const usersRelations = relations(users, ({ many }) => ({
     accounts: many(accounts),
     orders: many(orders, { relationName: 'buyer' }),
     transfers: many(transfers, { relationName: 'seller' }),
+    withdrawals: many(withdrawals),
 }));
 
 const accountsRelations = relations(accounts, ({ one }) => ({
@@ -73,6 +83,12 @@ const ordersRelations = relations(orders, ({ one }) => ({
     }),
 }));
 
+const withdrawalsRelations = relations(withdrawals, ({ one }) => ({
+    user: one(users, {
+        fields: [withdrawals.user_id],
+        references: [users.id],
+    }),
+}));
 const transfersRelations = relations(transfers, ({ one }) => ({
     order: one(orders, {
         fields: [transfers.order_id],
@@ -89,4 +105,5 @@ module.exports = {
     accounts,
     orders,
     transfers,
+    withdrawals
 };

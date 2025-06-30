@@ -6,7 +6,7 @@ const cors = require("cors");
 const { drizzle } = require("drizzle-orm/node-postgres");
 const { alias } = require("drizzle-orm/pg-core");
 const { eq, like, ilike, gte, lte, and, or, sql, desc, inArray } = require("drizzle-orm");
-const { accounts, users, orders, transfers } = require("./db/schema");
+const { accounts, users, orders, transfers, withdrawals } = require("./db/schema");
 const axios = require("axios");
 
 const app = express();
@@ -789,8 +789,30 @@ app.get('/accounts/:id/orders', async (req, res) => {
   }
 });
 
-// Start the server
+// Create withdrawal endpoint
+app.post('/withdrawals', async (req, res) => {
+  try {
+    const { user_id, amount } = req.body;
+    
+    if (!user_id || amount === undefined) {
+      return res.status(400).json({ error: "user_id and amount are required" });
+    }
+    
+    // Create withdrawal record
+    const result = await db.insert(withdrawals).values({
+      user_id,
+      amount,
+      status: 'pending'
+    }).returning();
+    
+    res.json(result[0]);
+  } catch (error) {
+    console.error("Error creating withdrawal:", error);
+    res.status(500).json({ error: "Failed to create withdrawal" });
+  }
+});
 
+// Start the server
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);

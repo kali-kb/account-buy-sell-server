@@ -57,6 +57,13 @@
       "when": 1751228245922,
       "tag": "0007_last_mauler",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1751234664083,
+      "tag": "0008_cloudy_bloodaxe",
+      "breakpoints": true
     }
   ]
 }
