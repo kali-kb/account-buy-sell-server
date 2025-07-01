@@ -1,12 +1,32 @@
 const { Telegraf, Markup, session } = require('telegraf');
 const dotenv = require('dotenv');
+const { Redis } = require('@upstash/redis');
 
 dotenv.config();
+
+// Initialize Redis client
+const redis = new Redis({
+  url: process.env.REDIS_URL,
+  token: process.env.REDIS_TOKEN,
+});
+
+const redisSession = {
+  get: async (key) => {
+    const data = await redis.get(key);
+    return data || {};
+  },
+  set: async (key, value) => {
+    await redis.set(key, value);
+  },
+  delete: async (key) => {
+    await redis.del(key);
+  }
+};
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const MINI_APP_URL = process.env.MINI_APP_URL;
 const REQUIRE_PAYMENT_SCREENSHOT = false; // Flag to toggle payment screenshot verification
-bot.use(session());
+bot.use(session({ store: redisSession }));
 
 // Welcome message and main keyboard
 const getMainKeyboard = () => {
@@ -83,10 +103,6 @@ bot.command('start', async (ctx) => {
     console.error('Error creating or fetching user on start:', e);
   }
 
-  // Initialize session if it doesn't exist
-  if (!ctx.session) {
-    ctx.session = {};
-  }
 
   // Save user data in session (in-memory, per bot instance)
   if (userData) {

@@ -8,6 +8,13 @@ const { alias } = require("drizzle-orm/pg-core");
 const { eq, like, ilike, gte, lte, and, or, sql, desc, inArray } = require("drizzle-orm");
 const { accounts, users, orders, transfers, withdrawals } = require("./db/schema");
 const axios = require("axios");
+const { Redis } = require("@upstash/redis");
+
+// Initialize Redis client
+const redis = new Redis({
+  url: process.env.REDIS_URL,
+  token: process.env.REDIS_TOKEN,
+});
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -844,4 +851,5 @@ app.post('/webhook', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Redis connected to ${process.env.REDIS_URL}`);
 });
