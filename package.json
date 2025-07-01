@@ -10,13 +10,17 @@
     "migrate": "node db/migrate.js"
   },
   "dependencies": {
+    "@telegraf/session": "^2.0.0-beta.7",
+    "@upstash/redis": "^1.35.1",
     "axios": "^1.10.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "drizzle-orm": "^0.43.1",
     "express": "^4.18.2",
     "pg": "^8.16.0",
-    "telegraf": "^4.15.3"
+    "redis": "^4.7.1",
+    "telegraf": "^4.16.3",
+    "winston": "^3.17.0"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.1",

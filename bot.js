@@ -521,29 +521,6 @@ bot.action(/cancel_order_(.+)/, async (ctx) => {
   }
 });
 
-// Handle Delete Account inline button
-bot.action(/delete_account_(.+)/, async (ctx) => {
-  const accountId = ctx.match[1];
-  try {
-    await ctx.answerCbQuery('Deleting account...');
-    // Call backend to delete the account
-    const res = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/accounts/${accountId}`, {
-      method: 'DELETE',
-    });
-    const data = await safeJsonParse(res);
-    if (!res.ok) {
-      // Show error from backend (e.g., pending orders)
-      const errorMsg = data && data.error ? data.error : 'Failed to delete account.';
-      await ctx.reply(`❌ ${errorMsg}`);
-      return;
-    }
-    // Success
-    await ctx.editMessageText('✅ Account deleted successfully.');
-  } catch (e) {
-    console.error('Error deleting account:', e);
-    await ctx.reply('❌ An error occurred while deleting the account.');
-  }
-});
 
 // Update the generic callback_query handler to allow other handlers to run if not handled
 bot.on('callback_query', async (ctx, next) => {
@@ -741,7 +718,7 @@ bot.action(/delete_account_(.+)/, async (ctx) => {
       if (orders && orders.length > 0) {
         const pendingOrders = orders.filter(order => order.status === 'pending' || order.status === 'in_progress');
         if (pendingOrders.length > 0) {
-          return ctx.answerCbQuery('Cannot delete account with pending orders. Please complete or cancel all orders first.', { show_alert: true });
+          return ctx.answerCbQuery('Cannot delete account with pending orders.', { show_alert: true });
         }
       }
     }
@@ -797,29 +774,6 @@ bot.action(/confirm_delete_(.+)/, async (ctx) => {
   }
 });
 
-// Handle Delete Account inline button
-bot.action(/delete_account_(.+)/, async (ctx) => {
-  const accountId = ctx.match[1];
-  try {
-    await ctx.answerCbQuery('Deleting account...');
-    // Call backend to delete the account
-    const res = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/accounts/${accountId}`, {
-      method: 'DELETE',
-    });
-    const data = await safeJsonParse(res);
-    if (!res.ok) {
-      // Show error from backend (e.g., pending orders)
-      const errorMsg = data && data.error ? data.error : 'Failed to delete account.';
-      await ctx.reply(`❌ ${errorMsg}`);
-      return;
-    }
-    // Success
-    await ctx.editMessageText('✅ Account deleted successfully.');
-  } catch (e) {
-    console.error('Error deleting account:', e);
-    await ctx.reply('❌ An error occurred while deleting the account.');
-  }
-});
 
 // Withdraw balance action
 bot.action('withdraw_balance', async (ctx) => {
@@ -875,16 +829,16 @@ bot.action('withdraw_balance', async (ctx) => {
 
 
 // Start the bot
-bot.launch()
-  .then(() => {
-    console.log('Bot started successfully');
-    if (!MINI_APP_URL) {
-      console.warn('Warning: MINI_APP_URL is not configured in environment variables');
-    }
-  })
-  .catch((err) => {
-    console.error('Error starting bot:', err);
-  });
+// bot.launch()
+//   .then(() => {
+//     console.log('Bot started successfully');
+//     if (!MINI_APP_URL) {
+//       console.warn('Warning: MINI_APP_URL is not configured in environment variables');
+//     }
+//   })
+//   .catch((err) => {
+//     console.error('Error starting bot:', err);
+//   });
 
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
@@ -892,7 +846,7 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 module.exports = { bot };
 
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
-module.exports = { bot };
+// module.exports = { bot };
 

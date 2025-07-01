@@ -497,7 +497,7 @@ app.post("/orders/verify-payment", async (req, res) => {
     const settledAmount = parseFloat(data.settledAmount.replace(/[^0-9.-]+/g,""));
     const expectedAmount = parseFloat(amount);
 
-    if (data.creditedPartyName !== "Ibrahi Ghazali Mohammed" || settledAmount < expectedAmount) {
+    if (data.creditedPartyName !== "Kaleb Mate Megane" || settledAmount < expectedAmount) {
       console.log(`Verification failed for receipt ${reference}. Expected receiver: "Kaleb Mate Megane", got: "${data.creditedPartyName}". Expected amount: ${expectedAmount}, got: ${settledAmount}`);
       return res.status(400).json({ error: "Payment details mismatch." });
     }
@@ -629,6 +629,10 @@ app.put("/orders/:id", async (req, res) => {
     res.json(result[0]);
   } catch (error) {
     console.error("Error updating order:", error);
+  }
+});
+
+
 app.post("/orders/:id/cancel", async (req, res) => {
   const { id } = req.params;
   try {
@@ -659,9 +663,7 @@ app.post("/orders/:id/cancel", async (req, res) => {
     });
   }
 });
-    res.status(500).json({ error: "Failed to update order" });
-  }
-});
+
 
 app.delete("/orders/:id", async (req, res) => {
   try {
@@ -733,6 +735,13 @@ app.delete('/accounts/:id', async (req, res) => {
       return res.status(404).json({ error: "Account not found" });
     }
 
+    // Only allow deletion if account status is 'available'
+    if (existingAccount[0].status !== 'available') {
+      return res.status(400).json({
+        error: "Cannot delete account. Account must be in 'available' status to be deleted."
+      });
+    }
+
     // Check if there are any pending orders for this account
     const pendingOrders = await db.select()
       .from(orders)
@@ -747,25 +756,22 @@ app.delete('/accounts/:id', async (req, res) => {
       );
 
     if (pendingOrders.length > 0) {
-      return res.status(400).json({ 
-        error: "Cannot delete account with pending orders. Please complete or cancel all orders first." 
+      return res.status(400).json({
+        error: "Cannot delete account with pending orders. Please complete or cancel all orders first."
       });
     }
 
-    // Delete all completed orders for this account first (to maintain referential integrity)
-    await db.delete(orders).where(eq(orders.account_id, id));
-    
-    // Then delete the account
+    // Delete the account
     const result = await db.delete(accounts).where(eq(accounts.id, id)).returning();
     
     if (result.length === 0) {
       return res.status(404).json({ error: "Account not found" });
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: "Account deleted successfully",
-      deleted: result[0] 
+      deleted: result[0]
     });
   } catch (error) {
     console.error("Error deleting account:", error);
@@ -798,21 +804,43 @@ app.post('/withdrawals', async (req, res) => {
       return res.status(400).json({ error: "user_id and amount are required" });
     }
     
-    // Create withdrawal record
-    const result = await db.insert(withdrawals).values({
-      user_id,
-      amount,
-      status: 'pending'
-    }).returning();
+    // Start transaction
+    const result = await db.transaction(async (tx) => {
+      // Check user balance
+      const user = await tx.select().from(users).where(eq(users.id, user_id));
+      if (user.length === 0) {
+        throw new Error("User not found");
+      }
+      if (user[0].balance < amount) {
+        throw new Error("Insufficient balance");
+      }
+      
+      // Update user balance
+      const newBalance = user[0].balance - amount;
+      await tx.update(users).set({ balance: newBalance }).where(eq(users.id, user_id));
+      
+      // Create withdrawal record
+      const withdrawal = await tx.insert(withdrawals).values({
+        user_id,
+        amount,
+        status: 'pending'
+      }).returning();
+      
+      return withdrawal[0];
+    });
     
-    res.json(result[0]);
+    res.json(result);
   } catch (error) {
     console.error("Error creating withdrawal:", error);
-    res.status(500).json({ error: "Failed to create withdrawal" });
+    res.status(500).json({ error: error.message || "Failed to create withdrawal" });
   }
 });
 
 // Start the server
+
+app.post('/webhook', (req, res) => {
+  bot.handleUpdate(req.body, res)
+})
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
