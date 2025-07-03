@@ -1,4 +1,4 @@
-const { pgTable, text, uuid, integer, boolean, timestamp } = require('drizzle-orm/pg-core');
+const { pgTable, text, uuid, integer, boolean, timestamp, index } = require('drizzle-orm/pg-core');
 const { relations } = require('drizzle-orm');
 
 const users = pgTable('users', {
@@ -9,7 +9,9 @@ const users = pgTable('users', {
     bank_name: text('bank_name'),
     account_number: text('account_number'),
     balance: integer('balance').default(0),
-});
+}, (table) => ({
+    telegramUserIdIdx: index('users_telegram_user_id_idx').on(table.telegram_user_id),
+}));
 
 const accounts = pgTable('accounts', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -25,9 +27,12 @@ const accounts = pgTable('accounts', {
     is_monetized: boolean('is_monetized'),
     created_at: timestamp('created_at').defaultNow(),
     updated_at: timestamp('updated_at').defaultNow(),
-});
+}, (table) => ({
+    ownerIdIdx: index('accounts_owner_id_idx').on(table.owner_id),
+    statusIdx: index('accounts_status_idx').on(table.status),
+    createdAtIdx: index('accounts_created_at_idx').on(table.created_at),
+}));
 
-//completed is set as status when the order is paid and the account is transferred to the buyer
 const orders = pgTable('orders', {
     id: uuid('id').defaultRandom().primaryKey(),
     buyer_id: uuid('buyer_id').notNull().references(() => users.id),
@@ -37,7 +42,10 @@ const orders = pgTable('orders', {
     receipt_no: text('receipt_no'),
     created_at: timestamp('created_at').defaultNow(),
     updated_at: timestamp('updated_at').defaultNow(),
-});
+}, (table) => ({
+    buyerIdIdx: index('orders_buyer_id_idx').on(table.buyer_id),
+    accountIdIdx: index('orders_account_id_idx').on(table.account_id),
+}));
 
 const transfers = pgTable('transfers', {
     id: uuid('id').defaultRandom().primaryKey(),
