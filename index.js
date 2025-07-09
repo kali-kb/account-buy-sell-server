@@ -322,9 +322,13 @@ app.get("/search/accounts", async (req, res) => {
     } else {
       statusCondition = eq(accounts.status, 'available');
     }
+    let conditions = [];
+    if (ownerId) {
+      conditions.push(eq(accounts.owner_id, ownerId));
+    } else {
+      conditions.push(eq(accounts.status, 'available'));
+    }
 
-    let conditions = [statusCondition];
-    
     if (query) {
       conditions.push(ilike(accounts.name, `%${query}%`));
     }
