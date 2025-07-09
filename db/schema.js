@@ -1,4 +1,4 @@
-const { pgTable, text, uuid, integer, boolean, timestamp, index } = require('drizzle-orm/pg-core');
+const { pgEnum, pgTable, text, uuid, integer, boolean, timestamp, index } = require('drizzle-orm/pg-core');
 const { relations } = require('drizzle-orm');
 
 const users = pgTable('users', {
@@ -56,13 +56,15 @@ const transfers = pgTable('transfers', {
     updated_at: timestamp('updated_at').defaultNow(),
 });
 
+
 const withdrawals = pgTable('withdrawals', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    user_id: uuid('user_id').notNull().references(() => users.id),
-    amount: integer('amount').notNull(),
-    status: text('status', { enum: ['pending', 'completed', 'rejected'] }).notNull().default('pending'),
-    created_at: timestamp('created_at').defaultNow(),
-    updated_at: timestamp('updated_at').defaultNow(),
+  id: uuid('id').defaultRandom().primaryKey(),
+  user_id: uuid('user_id').notNull().references(() => users.id),
+  amount: integer('amount').notNull(),
+  status: text('status', { enum: ['pending', 'completed', 'rejected'] }).notNull().default('pending'),
+  reason: text('reason', { enum: ['order_refund', 'seller_payout'] }).notNull().default('order_refund'),
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow(),
 });
 
 // Define relations

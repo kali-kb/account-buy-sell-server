@@ -5,71 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1747485590471,
-      "tag": "0000_overconfident_la_nuit",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1747512729518,
-      "tag": "0001_wonderful_oracle",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1747517609182,
-      "tag": "0002_medical_marten_broadcloak",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1747517793056,
-      "tag": "0003_slippery_vargas",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1750096848871,
-      "tag": "0004_dizzy_rattler",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1750887606825,
-      "tag": "0005_military_lady_vermin",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1751117424079,
-      "tag": "0006_dazzling_siren",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1751228245922,
-      "tag": "0007_last_mauler",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1751234664083,
-      "tag": "0008_cloudy_bloodaxe",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1751405034075,
-      "tag": "0009_far_tusk",
+      "when": 1752005633161,
+      "tag": "0000_many_la_nuit",
       "breakpoints": true
     }
   ]

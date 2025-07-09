@@ -32,7 +32,8 @@ bot.use(session({ store: redisSession }));
 const getMainKeyboard = () => {
   return Markup.keyboard([
     ['For Buying', 'For Selling'],
-    ['📄 Rules and guidelines']
+    ['📄 Rules and guidelines'],
+    ['Invite Friends'],
   ]).resize();
 };
 
@@ -381,6 +382,14 @@ bot.hears('For Selling', (ctx) => {
   ]));
 });
 
+bot.hears('Invite Friends', (ctx) => {
+  const inviteLink = 'https://t.me/account_market_et_bot';
+  const inviteMessage =
+    `${escapeMarkdown('🎉 Invite your friends to join the Account Buying and Selling Bot using a link below!')}\n\n` +
+    `👉 ${escapeMarkdown(inviteLink)}`
+  ctx.reply(inviteMessage, { parse_mode: 'MarkdownV2', disable_web_page_preview: false });
+});
+
 // Handle Rules and guidelines button
 bot.hears('📄 Rules and guidelines', (ctx) => {
   const rulesMessage = `📜 Rules and Guidelines\n\n` +
@@ -527,7 +536,11 @@ bot.action(/cancel_order_(.+)/, async (ctx) => {
       const err = await safeJsonParse(res);
       await ctx.reply('❌ Failed to cancel order.' + (err?.error ? ` Reason: ${err.error}` : ''));
     } else {
-      await ctx.reply('✅ Order cancelled successfully.');
+      const reasonMessages = {
+        order_refund: 'Refund processed due to order cancellation',
+        seller_payout: 'Seller payout initiated - funds will be processed within 24 hours'
+      };
+      await ctx.reply(`✅ ${reasonMessages['order_refund']}`);
       // Refresh purchase list
       await fetchAndShowPurchases(ctx);
     }
@@ -613,11 +626,16 @@ bot.on('callback_query', async (ctx, next) => {
 
     // Always show static escrow Telebirr account details
     const bankDetails =
-        `Please make the payment of *${account.price.toLocaleString()} ETB* to the following escrow account:\n\n` +
-        `*Bank Name:* Telebirr\n` +
-        `*Account Number:* 0907608839\n` +
-        `*Account Name:* Kaleb Mate\n\n` +
-        `After payment, please send the transaction receipt number to proceed with the order.`;
+      `Please make the payment of *${account.price.toLocaleString()} ETB* to one of the following escrow accounts:\n\n` +
+      `*Option 1*\n` +
+      `*Bank Name:* Telebirr\n` +
+      `*Account Number:* 0907608839\n` +
+      `*Account Name:* Kaleb Mate\n\n` +
+      `*Option 2*\n` +
+      `*Bank Name:* Commercial Bank of Ethiopia\n` +
+      `*Account Name:* KALEB MATE MEGANE\n` +
+      `*Account Number:* 1000308680658\n\n` +
+      `After payment, please send the transaction receipt number to proceed with the order.`;
 
     await ctx.reply(bankDetails, { parse_mode: 'Markdown' });
     return;
@@ -727,21 +745,10 @@ bot.action(/delete_account_(.+)/, async (ctx) => {
       return ctx.answerCbQuery('Error: You can only delete your own accounts.', { show_alert: true });
     }
 
-    // Check if there are any pending orders for this account
-    const ordersRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/accounts/${accountId}/orders`);
-    if (ordersRes.ok) {
-      const orders = await safeJsonParse(ordersRes);
-      if (orders && orders.length > 0) {
-        const pendingOrders = orders.filter(order => order.status === 'pending' || order.status === 'in_progress');
-        if (pendingOrders.length > 0) {
-          return ctx.answerCbQuery('Cannot delete account with pending orders.', { show_alert: true });
-        }
-      }
-    }
-
+    // No need to check for pending orders, just confirm deletion
     const confirmationMessage = `⚠️ DELETE ACCOUNT CONFIRMATION ⚠️\n\n` +
       `Are you sure you want to delete "${account.name}"?\n\n` +
-      `This action cannot be undone. The account will be permanently removed from the marketplace.`;
+      `This action cannot be undone. The account and any associated orders will be permanently removed from the marketplace. Buyers will be refunded automatically.`;
 
     await ctx.editMessageText(confirmationMessage, Markup.inlineKeyboard([
       [
@@ -768,7 +775,7 @@ bot.action(/confirm_delete_(.+)/, async (ctx) => {
   try {
     const accountId = ctx.match[1];
     
-    // Delete the account
+    // Delete the account and get affected orders (buyers to notify)
     const deleteRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/accounts/${accountId}`, {
       method: 'DELETE'
     });
@@ -780,7 +787,23 @@ bot.action(/confirm_delete_(.+)/, async (ctx) => {
       return ctx.answerCbQuery('Delete failed', { show_alert: true });
     }
 
-    await ctx.editMessageText('✅ Account successfully deleted from the marketplace.');
+    // Expect backend to return { affectedOrders: [{ buyer: { telegram_user_id, username }, account: { name } }, ...] }
+    const result = await safeJsonParse(deleteRes);
+    const affectedOrders = result?.affectedOrders || [];
+
+    // Notify each buyer
+    for (const { buyer, account } of affectedOrders) {
+      if (buyer?.telegram_user_id && account?.name) {
+        const msg = `❗️ The order you placed for "${account.name}" was removed by the seller.\nYou will be refunded within 24 hours up to 7 days.`;
+        try {
+          await ctx.telegram.sendMessage(buyer.telegram_user_id, msg);
+        } catch (e) {
+          console.error(`Failed to notify buyer ${buyer.telegram_user_id}:`, e);
+        }
+      }
+    }
+
+    await ctx.editMessageText('✅ Account successfully deleted from the marketplace. All buyers have been notified and will be refunded.');
     await ctx.answerCbQuery('Account deleted successfully');
 
   } catch (e) {
@@ -828,7 +851,11 @@ bot.action('withdraw_balance', async (ctx) => {
             });
             
             if (withdrawalRes.ok) {
-                await ctx.reply('✅ Your funds will be sent to your registered bank account in 24 hours upto 7 days');
+                const reasonMessages = {
+                  order_refund: 'Refund processed due to order cancellation',
+                  seller_payout: 'Seller payout initiated - funds will be processed within 24 hours'
+                };
+                await ctx.reply(`✅ ${reasonMessages[withdrawal.reason] || 'Funds will be sent to your bank account within 24 hours'}`);
             } else {
                 const errorData = await withdrawalRes.json();
                 ctx.reply(`❌ Failed to process withdrawal: ${errorData.error || 'Unknown error'}`);
@@ -845,16 +872,16 @@ bot.action('withdraw_balance', async (ctx) => {
 
 
 // Start the bot
-// bot.launch()
-//   .then(() => {
-//     console.log('Bot started successfully');
-//     if (!MINI_APP_URL) {
-//       console.warn('Warning: MINI_APP_URL is not configured in environment variables');
-//     }
-//   })
-//   .catch((err) => {
-//     console.error('Error starting bot:', err);
-//   });
+bot.launch()
+  .then(() => {
+    console.log('Bot started successfully');
+    if (!MINI_APP_URL) {
+      console.warn('Warning: MINI_APP_URL is not configured in environment variables');
+    }
+  })
+  .catch((err) => {
+    console.error('Error starting bot:', err);
+  });
 
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));

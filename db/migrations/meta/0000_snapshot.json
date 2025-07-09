@@ -1,5 +1,5 @@
 {
-  "id": "0018fa05-e116-4f79-b510-14662a030a2c",
+  "id": "cb17fc61-544c-4369-90f8-5a1883061fba",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -26,12 +26,61 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "account_holder_name": {
+          "name": "account_holder_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bank_name": {
+          "name": "bank_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "account_number": {
+          "name": "account_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "balance": {
+          "name": "balance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
         }
       },
-      "indexes": {},
+      "indexes": {
+        "users_telegram_user_id_idx": {
+          "name": "users_telegram_user_id_idx",
+          "columns": [
+            {
+              "expression": "telegram_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "users_telegram_user_id_unique": {
+          "name": "users_telegram_user_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "telegram_user_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -84,6 +133,13 @@
           "notNull": true,
           "default": true
         },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'available'"
+        },
         "subscriber_count": {
           "name": "subscriber_count",
           "type": "integer",
@@ -117,7 +173,53 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "accounts_owner_id_idx": {
+          "name": "accounts_owner_id_idx",
+          "columns": [
+            {
+              "expression": "owner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "accounts_status_idx": {
+          "name": "accounts_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "accounts_created_at_idx": {
+          "name": "accounts_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "accounts_owner_id_users_id_fk": {
           "name": "accounts_owner_id_users_id_fk",
@@ -175,6 +277,12 @@
           "notNull": true,
           "default": "'pending'"
         },
+        "receipt_no": {
+          "name": "receipt_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -190,7 +298,38 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "orders_buyer_id_idx": {
+          "name": "orders_buyer_id_idx",
+          "columns": [
+            {
+              "expression": "buyer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "orders_account_id_idx": {
+          "name": "orders_account_id_idx",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "orders_buyer_id_users_id_fk": {
           "name": "orders_buyer_id_users_id_fk",
@@ -215,7 +354,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -245,18 +384,6 @@
         "seller_id": {
           "name": "seller_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "buyer_id": {
-          "name": "buyer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -309,19 +436,6 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "transfers_buyer_id_users_id_fk": {
-          "name": "transfers_buyer_id_users_id_fk",
-          "tableFrom": "transfers",
-          "tableTo": "users",
-          "columnsFrom": [
-            "buyer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -330,8 +444,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.bank_accounts": {
-      "name": "bank_accounts",
+    "public.withdrawals": {
+      "name": "withdrawals",
       "schema": "",
       "columns": {
         "id": {
@@ -347,23 +461,25 @@
           "primaryKey": false,
           "notNull": true
         },
-        "account_holder_name": {
-          "name": "account_holder_name",
-          "type": "text",
+        "amount": {
+          "name": "amount",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "bank_name": {
-          "name": "bank_name",
+        "status": {
+          "name": "status",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'pending'"
         },
-        "account_number": {
-          "name": "account_number",
+        "reason": {
+          "name": "reason",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'order_refund'"
         },
         "created_at": {
           "name": "created_at",
@@ -382,9 +498,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "bank_accounts_user_id_users_id_fk": {
-          "name": "bank_accounts_user_id_users_id_fk",
-          "tableFrom": "bank_accounts",
+        "withdrawals_user_id_users_id_fk": {
+          "name": "withdrawals_user_id_users_id_fk",
+          "tableFrom": "withdrawals",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"

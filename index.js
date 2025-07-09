@@ -308,7 +308,22 @@ app.get("/search/accounts", async (req, res) => {
     console.log(`[SEARCH] Query: ${query}, Platforms: ${platform_types}, Year: ${creation_year}, Page: ${page}`);
     
     let filteredAccounts = db.select().from(accounts);
-    let conditions = [eq(accounts.status, 'available')];
+    // Allow owners to see their pending accounts
+    const ownerId = req.query.owner_id;
+    let statusCondition;
+    if (ownerId) {
+      statusCondition = or(
+        eq(accounts.status, 'available'),
+        and(
+          eq(accounts.status, 'pending'),
+          eq(accounts.owner_id, ownerId)
+        )
+      );
+    } else {
+      statusCondition = eq(accounts.status, 'available');
+    }
+
+    let conditions = [statusCondition];
     
     if (query) {
       conditions.push(ilike(accounts.name, `%${query}%`));
@@ -615,11 +630,19 @@ app.put("/orders/:id", async (req, res) => {
       .where(eq(orders.id, id))
       .returning();
 
-    // If status is completed, mark account as sold and then clean up
+    // If status is completed, mark account as sold and create payout
     if (status === 'completed') {
       const order = result[0];
       await db.update(accounts).set({ status: 'sold' }).where(eq(accounts.id, order.account_id));
       
+      // Create seller payout
+      await db.insert(withdrawals).values({
+        user_id: order.account.owner_id,
+        amount: order.account.price,
+        status: 'pending',
+        reason: 'seller_payout'
+      });
+
       // Set a small delay to ensure notifications are sent before deletion
       setTimeout(async () => {
         try {
@@ -654,7 +677,15 @@ app.post("/orders/:id/cancel", async (req, res) => {
       // 2. Update the account status back to 'available'
       await tx.update(accounts).set({ status: 'available' }).where(eq(accounts.id, order.account_id));
       
-      // 3. Delete the order
+      // 3. Create refund withdrawal
+      await tx.insert(withdrawals).values({
+        user_id: order.buyer_id,
+        amount: order.amount,
+        status: 'completed',
+        reason: 'order_refund'
+      });
+
+      // 4. Delete the order
       const deletedOrder = await tx.delete(orders).where(eq(orders.id, id)).returning();
       
       return deletedOrder[0];
@@ -664,9 +695,9 @@ app.post("/orders/:id/cancel", async (req, res) => {
 
   } catch (error) {
     console.error("Error cancelling order:", error);
-    res.status(error.message.includes("Order not found") ? 404 : 500).json({ 
+    res.status(error.message.includes("Order not found") ? 404 : 500).json({
       error: "Failed to cancel order",
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -741,45 +772,58 @@ app.delete('/accounts/:id', async (req, res) => {
     if (existingAccount.length === 0) {
       return res.status(404).json({ error: "Account not found" });
     }
+    const account = existingAccount[0];
 
-    // Only allow deletion if account status is 'available'
-    if (existingAccount[0].status !== 'available') {
-      return res.status(400).json({
-        error: "Cannot delete account. Account must be in 'available' status to be deleted."
-      });
-    }
-
-    // Check if there are any pending orders for this account
-    const pendingOrders = await db.select()
+    // Fetch all active orders and their buyers for this account
+    const activeOrders = await db
+      .select({
+        order: orders,
+        buyer: users,
+        account: accounts
+      })
       .from(orders)
-      .where(
-        and(
-          eq(orders.account_id, id),
-          or(
-            eq(orders.status, 'pending'),
-            eq(orders.status, 'in_progress')
-          )
-        )
-      );
+      .innerJoin(users, eq(orders.buyer_id, users.id))
+      .innerJoin(accounts, eq(orders.account_id, accounts.id))
+      .where(eq(orders.account_id, id));
 
-    if (pendingOrders.length > 0) {
-      return res.status(400).json({
-        error: "Cannot delete account with pending orders. Please complete or cancel all orders first."
-      });
-    }
+    // Prepare affectedOrders array for bot notifications
+    const affectedOrders = activeOrders.map(o => ({
+      buyer: {
+        telegram_user_id: o.buyer.telegram_user_id,
+        username: o.buyer.username
+      },
+      account: {
+        name: o.account.name
+      }
+    }));
 
-    // Delete the account
-    const result = await db.delete(accounts).where(eq(accounts.id, id)).returning();
-    
-    if (result.length === 0) {
-      return res.status(404).json({ error: "Account not found" });
-    }
+    // Use transaction to handle order cleanup and refunds
+    const result = await db.transaction(async (tx) => {
+      // Create refund withdrawals for each order
+      for (const o of activeOrders) {
+        await tx.insert(withdrawals).values({
+          user_id: o.buyer.id,
+          amount: o.order.amount,
+          status: 'completed',
+          reason: 'order_refund'
+        });
+      }
+
+      // Delete all associated orders
+      await tx.delete(orders).where(eq(orders.account_id, id));
+      
+      // Delete the account
+      const deletedAccount = await tx.delete(accounts).where(eq(accounts.id, id)).returning();
+      return deletedAccount[0];
+    });
 
     res.json({
       success: true,
       message: "Account deleted successfully",
-      deleted: result[0]
+      deleted: result,
+      affectedOrders // <-- This is what your bot expects!
     });
+
   } catch (error) {
     console.error("Error deleting account:", error);
     res.status(500).json({ error: "Failed to delete account" });
