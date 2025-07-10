@@ -637,27 +637,36 @@ app.put("/orders/:id", async (req, res) => {
     // If status is completed, mark account as sold and create payout
     if (status === 'completed') {
       const order = result[0];
+
+      // Fetch the account info
+      const accountArr = await db.select().from(accounts).where(eq(accounts.id, order.account_id));
+      if (!accountArr.length) {
+        return res.status(404).json({ error: "Account not found for payout" });
+      }
+      const account = accountArr[0];
+
       await db.update(accounts).set({ status: 'sold' }).where(eq(accounts.id, order.account_id));
-      
-      // Create seller payout
+
+      // Create seller payout using fetched account info
       await db.insert(withdrawals).values({
-        user_id: order.account.owner_id,
-        amount: order.account.price,
+        user_id: account.owner_id,
+        amount: account.price,
         status: 'pending',
         reason: 'seller_payout'
       });
 
-      // Set a small delay to ensure notifications are sent before deletion
+      // Wait a few seconds to allow notifications to be sent, then delete the account and all its orders
       setTimeout(async () => {
         try {
-          // First delete all orders associated with this account
+          // Delete all orders for this account
           await db.delete(orders).where(eq(orders.account_id, order.account_id));
-          // Then delete the account
+          // Delete the account itself
           await db.delete(accounts).where(eq(accounts.id, order.account_id));
+          console.log(`Account ${order.account_id} and its orders deleted after successful transfer.`);
         } catch (error) {
           console.error('Error during cleanup after order completion:', error);
         }
-      }, 5000); // 5 second delay to ensure notifications are sent
+      }, 5000); // 5 seconds delay
     }
 
     res.json(result[0]);
