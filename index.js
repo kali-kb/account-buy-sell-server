@@ -864,7 +864,7 @@ app.get('/accounts/:id/orders', async (req, res) => {
 // Create withdrawal endpoint
 app.post('/withdrawals', async (req, res) => {
   try {
-    const { user_id, amount } = req.body;
+    const { user_id, amount, reason } = req.body;
     
     if (!user_id || amount === undefined) {
       return res.status(400).json({ error: "user_id and amount are required" });
@@ -889,7 +889,8 @@ app.post('/withdrawals', async (req, res) => {
       const withdrawal = await tx.insert(withdrawals).values({
         user_id,
         amount,
-        status: 'pending'
+        reason,
+        status: 'pending',
       }).returning();
       
       return withdrawal[0];

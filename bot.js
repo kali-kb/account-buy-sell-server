@@ -177,7 +177,15 @@ async function sendOrdersPage(ctx, title = '📄 Your Orders', edit = false) {
   const { orders, orders_page = 0 } = ctx.session;
 
   if (!orders || orders.length === 0) {
-    const text = 'You have no orders yet.';
+    let text = 'You have no orders yet.';
+    
+    // Check if we're showing purchases or sales based on the title
+    if (title && title.includes('Purchases')) {
+      text = 'You have no purchases yet.';
+    } else if (title && title.includes('Sales')) {
+      text = 'You have no sales yet.';
+    }
+    
     if (edit) {
       try {
         return await ctx.editMessageText(text, { reply_markup: { inline_keyboard: [] } });
@@ -540,7 +548,7 @@ bot.action(/cancel_order_(.+)/, async (ctx) => {
     } else {
       const reasonMessages = {
         order_refund: 'Refund processed due to order cancellation',
-        seller_payout: 'Seller payout initiated - funds will be processed within 24 hours'
+        seller_payout: 'Seller payout initiated - funds will be processed within 24 hours upto 7 days'
       };
       await ctx.reply(`✅ ${reasonMessages['order_refund']}`);
       // Refresh purchase list
@@ -663,6 +671,20 @@ bot.action(/pay_method_telebirr_(.+)/, async (ctx) => {
   const accountId = ctx.match[1];
   ctx.session.pendingAccountId = accountId;
   ctx.session.pendingPaymentMethod = 'telebirr';
+  
+  // Fetch account details to get the price
+  try {
+    const accountRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/accounts/${accountId}`);
+    if (accountRes.ok) {
+      const accountData = await safeJsonParse(accountRes);
+      if (accountData && accountData[0] && accountData[0].accounts) {
+        ctx.session.pendingAccountPrice = accountData[0].accounts.price;
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching account price:', error);
+  }
+  
   await ctx.reply('Please enter your Telebirr receipt number:');
   await ctx.answerCbQuery();
 });
@@ -672,6 +694,20 @@ bot.action(/pay_method_cbe_(.+)/, async (ctx) => {
   const accountId = ctx.match[1];
   ctx.session.pendingAccountId = accountId;
   ctx.session.pendingPaymentMethod = 'cbe';
+  
+  // Fetch account details to get the price
+  try {
+    const accountRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/accounts/${accountId}`);
+    if (accountRes.ok) {
+      const accountData = await safeJsonParse(accountRes);
+      if (accountData && accountData[0] && accountData[0].accounts) {
+        ctx.session.pendingAccountPrice = accountData[0].accounts.price;
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching account price:', error);
+  }
+  
   await ctx.reply('Please upload a screenshot of your CBE payment receipt (as an image):');
   await ctx.answerCbQuery();
 });
@@ -970,7 +1006,8 @@ bot.action('withdraw_balance', async (ctx) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     user_id: user.id,
-                    amount: userData.balance
+                    amount: userData.balance,
+                    reason: 'seller_payout'
                 })
             });
             
