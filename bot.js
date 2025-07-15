@@ -1,6 +1,8 @@
 const { Telegraf, Markup, session } = require('telegraf');
 const dotenv = require('dotenv');
 const { Redis } = require('@upstash/redis');
+const FormData = require('form-data');
+const cloudinaryUploader = require('./utils/uploader.js');
 
 dotenv.config();
 
@@ -505,7 +507,7 @@ bot.action(/transfer_complete_(.+)/, async (ctx) => {
     }
 
     // 4. Notify seller
-    await ctx.editMessageText('🎉 Transfer Complete! The Your balance has been credited. Thank you for your business.');
+    await ctx.editMessageText('🎉 Transfer Complete! Your balance has been credited. Thank you for your business.');
 
     // 5. Notify buyer
     const buyerMessage = `🎉 The account "${account.name}" has been successfully transferred to you! The order is now complete.`;
@@ -638,6 +640,15 @@ bot.on('callback_query', async (ctx, next) => {
       `After payment, please send the transaction receipt number to proceed with the order.`;
 
     await ctx.reply(bankDetails, { parse_mode: 'Markdown' });
+
+    await ctx.reply(
+      "Please choose your payment method:",
+      Markup.inlineKeyboard([
+        [Markup.button.callback('Pay with Telebirr', `pay_method_telebirr_${accountId}`)],
+        [Markup.button.callback('Pay with CBE', `pay_method_cbe_${accountId}`)]
+      ])
+    );
+
     return;
 
     // The rest of the logic is now handled by the text handler below
@@ -647,48 +658,163 @@ bot.on('callback_query', async (ctx, next) => {
   }
 });
 
+// Telebirr: ask for receipt number
+bot.action(/pay_method_telebirr_(.+)/, async (ctx) => {
+  const accountId = ctx.match[1];
+  ctx.session.pendingAccountId = accountId;
+  ctx.session.pendingPaymentMethod = 'telebirr';
+  await ctx.reply('Please enter your Telebirr receipt number:');
+  await ctx.answerCbQuery();
+});
+
+// CBE: ask for image
+bot.action(/pay_method_cbe_(.+)/, async (ctx) => {
+  const accountId = ctx.match[1];
+  ctx.session.pendingAccountId = accountId;
+  ctx.session.pendingPaymentMethod = 'cbe';
+  await ctx.reply('Please upload a screenshot of your CBE payment receipt (as an image):');
+  await ctx.answerCbQuery();
+});
+
 // Handle receipt number submission
 bot.on('text', async (ctx) => {
-  if (!ctx.session?.pendingAccountId || !ctx.message.text) {
-    return;
-  }
+  if (!ctx.session?.pendingAccountId || !ctx.message.text) return;
 
-  const receiptNo = ctx.message.text.trim();
+  const paymentMethod = ctx.session.pendingPaymentMethod;
   const accountId = ctx.session.pendingAccountId;
   const accountPrice = ctx.session.pendingAccountPrice;
+  const receiptNo = ctx.message.text.trim();
+
+  if (paymentMethod === 'telebirr') {
+    try {
+      await ctx.reply('🔍 Verifying your payment, please wait...');
+
+      // 1. Verify payment with the external API
+      const verificationResponse = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders/verify-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference: receiptNo, amount: accountPrice })
+      });
+
+      if (!verificationResponse.ok) {
+        const errorData = await safeJsonParse(verificationResponse);
+        return ctx.reply(`❌ Payment verification failed: ${errorData.error || 'Unknown error'}`);
+      }
+
+      // 2. Get user data
+      const telegram_user_id = ctx.from.id.toString();
+      const username = ctx.from.username || '';
+      const userRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/users/by-telegram/${telegram_user_id}`);
+      if (!userRes.ok) throw new Error('Failed to get user data');
+      const userData = await safeJsonParse(userRes);
+      if (!userData?.id) throw new Error('User data not available');
+
+      // 3. Create the order
+      const orderResponse = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buyer_id: userData.id,
+          account_id: accountId,
+          amount: accountPrice,
+          receipt_no: receiptNo
+        })
+      });
+
+      if (!orderResponse.ok) {
+        const errorData = await safeJsonParse(orderResponse);
+        throw new Error(errorData.error || 'Failed to create order');
+      }
+
+      const order = await safeJsonParse(orderResponse);
+
+      // 4. Clean up session and notify user
+      delete ctx.session.pendingAccountId;
+      delete ctx.session.pendingAccountPrice;
+
+      await ctx.reply(`✅ Payment verified and order created successfully!\nOrder ID: ${order.id}`);
+
+    } catch (error) {
+      console.error('Error processing receipt:', error);
+      await ctx.reply(`❌ An error occurred: ${error.message}`);
+      // Clear session on error
+      delete ctx.session.pendingAccountId;
+      delete ctx.session.pendingAccountPrice;
+    }
+  }
+});
+
+// New handler for CBE payment screenshot
+bot.on('photo', async (ctx) => {
+  if (!ctx.session?.pendingAccountId || ctx.session.pendingPaymentMethod !== 'cbe') return;
+
+  const accountId = ctx.session.pendingAccountId;
+  const accountPrice = ctx.session.pendingAccountPrice;
+  console.log("account price: ", accountPrice)
+  await ctx.reply('🔍 Verifying your CBE payment, please wait...');
 
   try {
-    await ctx.reply('🔍 Verifying your payment, please wait...');
+    // Get the highest resolution photo
+    const photo = ctx.message.photo[ctx.message.photo.length - 1];
+    const fileId = photo.file_id;
+    const fileUrl = await ctx.telegram.getFileLink(fileId);
 
-    // 1. Verify payment with the external API
-    const verificationResponse = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders/verify-payment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reference: receiptNo, amount: accountPrice })
-    });
+    // Upload image to Cloudinary
+    const response = await fetch(fileUrl.href);
+    const buffer = await response.arrayBuffer();
+    const cloudinaryUrl = await cloudinaryUploader(Buffer.from(buffer));
 
-    if (!verificationResponse.ok) {
-      const errorData = await safeJsonParse(verificationResponse);
-      return ctx.reply(`❌ Payment verification failed: ${errorData.error || 'Unknown error'}`);
+    // Verify payment using new API
+    console.log("url", `${process.env.CBE_VERIFIER_URL}/parse?image_url=${cloudinaryUrl}`)
+    const verifyRes = await fetch(`${process.env.CBE_VERIFIER_URL}/parse?image_url=${cloudinaryUrl}`);
+    // const verifyRes = await fetch(`${process.env.CBE_VERIFIER_URL}/parse?image_url=${encodeURIComponent(cloudinaryUrl)}`);
+    if (!verifyRes.ok) {
+      console.error('Failed to verify payment:', verifyRes.status, verifyRes.statusText);
+      throw new Error('Failed to verify payment');
     }
 
-    // 2. Get user data
+    const verificationData = await verifyRes.json();
+    console.log("verification data", verificationData)
+    if (!verificationData.success) {
+      if (verificationData.message === "transaction already exist") {
+        return ctx.reply('❌ This transaction receipt has already been used. Please use a new receipt.');
+      }
+      return ctx.reply('❌ Payment verification failed. Please check your receipt and try again.');
+    }
+
+    // Get user data
     const telegram_user_id = ctx.from.id.toString();
-    const username = ctx.from.username || '';
     const userRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/users/by-telegram/${telegram_user_id}`);
     if (!userRes.ok) throw new Error('Failed to get user data');
     const userData = await safeJsonParse(userRes);
     if (!userData?.id) throw new Error('User data not available');
 
-    // 3. Create the order
+    // Validate receiver name
+    const validReceivers = ['Kaleb Mate', 'KALEB MATE MEGANE'];
+    const normalizedReceiver = verificationData.data.receiver.trim().toUpperCase();
+    const isValidReceiver = validReceivers.some(name => 
+      name.toUpperCase() === normalizedReceiver
+    );
+    
+    if (!isValidReceiver) {
+      throw new Error(`The receiver name '${verificationData.data.receiver}' does not match any escrow account`);
+    }
+
+    // Validate amount matches account price
+    const amount = parseInt(verificationData.data.amount);
+    if (amount !== accountPrice) {
+      throw new Error(`Amount ${amount} ETB does not match required price ${accountPrice} ETB`);
+    }
+
+    // Create the order
     const orderResponse = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         buyer_id: userData.id,
         account_id: accountId,
-        amount: accountPrice,
-        receipt_no: receiptNo
+        amount: amount,
+        receipt_no: verificationData.data.transaction,
       })
     });
 
@@ -697,19 +823,17 @@ bot.on('text', async (ctx) => {
       throw new Error(errorData.error || 'Failed to create order');
     }
 
-    const order = await safeJsonParse(orderResponse);
-
-    // 4. Clean up session and notify user
+    await ctx.reply('✅ CBE payment verified and order created successfully!');
     delete ctx.session.pendingAccountId;
+    delete ctx.session.pendingPaymentMethod;
     delete ctx.session.pendingAccountPrice;
 
-    await ctx.reply(`✅ Payment verified and order created successfully!\nOrder ID: ${order.id}`);
-
   } catch (error) {
-    console.error('Error processing receipt:', error);
+    console.error('Error verifying CBE payment:', error);
     await ctx.reply(`❌ An error occurred: ${error.message}`);
-    // Clear session on error
+    // Clean up session
     delete ctx.session.pendingAccountId;
+    delete ctx.session.pendingPaymentMethod;
     delete ctx.session.pendingAccountPrice;
   }
 });
@@ -851,6 +975,8 @@ bot.action('withdraw_balance', async (ctx) => {
             });
             
             if (withdrawalRes.ok) {
+                const withdrawal = await withdrawalRes.json();
+                console.log('Withdrawal created:', withdrawal);
                 const reasonMessages = {
                   order_refund: 'Refund processed due to order cancellation',
                   seller_payout: 'Seller payout initiated - funds will be processed within 24 hours'
@@ -892,4 +1018,3 @@ module.exports = { bot };
 // process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 // module.exports = { bot };
-

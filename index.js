@@ -401,6 +401,8 @@ app.get("/accounts/:id", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch account" });
   }
 });
+
+
 app.post("/accounts/:id/reserve", async (req, res) => {
   const { id } = req.params;
   const { buyer_id } = req.body;
