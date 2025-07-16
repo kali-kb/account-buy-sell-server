@@ -2,7 +2,7 @@ const { Telegraf, Markup, session } = require('telegraf');
 const dotenv = require('dotenv');
 const { Redis } = require('@upstash/redis');
 const FormData = require('form-data');
-const cloudinaryUploader = require('./utils/uploader.js');
+const { cloudinaryUploader, deleteFromCloudinary } = require('./utils/uploader.js');
 
 dotenv.config();
 
@@ -806,12 +806,27 @@ bot.on('photo', async (ctx) => {
     // const verifyRes = await fetch(`${process.env.CBE_VERIFIER_URL}/parse?image_url=${encodeURIComponent(cloudinaryUrl)}`);
     if (!verifyRes.ok) {
       console.error('Failed to verify payment:', verifyRes.status, verifyRes.statusText);
+      // Delete the uploaded image even on verification failure
+      try {
+        await deleteFromCloudinary(cloudinaryUrl);
+        console.log('Deleted failed verification image from Cloudinary:', cloudinaryUrl);
+      } catch (deleteError) {
+        console.error('Failed to delete image from Cloudinary:', deleteError);
+      }
       throw new Error('Failed to verify payment');
     }
 
     const verificationData = await verifyRes.json();
     console.log("verification data", verificationData)
     if (!verificationData.success) {
+      // Delete the uploaded image even on verification failure
+      try {
+        await deleteFromCloudinary(cloudinaryUrl);
+        console.log('Deleted failed verification image from Cloudinary:', cloudinaryUrl);
+      } catch (deleteError) {
+        console.error('Failed to delete image from Cloudinary:', deleteError);
+      }
+      
       if (verificationData.message === "transaction already exist") {
         return ctx.reply('❌ This transaction receipt has already been used. Please use a new receipt.');
       }
@@ -839,6 +854,12 @@ bot.on('photo', async (ctx) => {
     // Validate amount matches account price
     const amount = parseInt(verificationData.data.amount);
     if (amount !== accountPrice) {
+      try {
+        await deleteFromCloudinary(cloudinaryUrl);
+        console.log('Deleted image from Cloudinary:', cloudinaryUrl);
+      } catch (deleteError) {
+        console.error('Failed to delete image from Cloudinary:', deleteError);
+      }
       throw new Error(`Amount ${amount} ETB does not match required price ${accountPrice} ETB`);
     }
 
@@ -860,6 +881,16 @@ bot.on('photo', async (ctx) => {
     }
 
     await ctx.reply('✅ CBE payment verified and order created successfully!');
+    
+    // Delete the uploaded image from Cloudinary
+    try {
+      await deleteFromCloudinary(cloudinaryUrl);
+      console.log('Successfully deleted image from Cloudinary:', cloudinaryUrl);
+    } catch (deleteError) {
+      console.error('Failed to delete image from Cloudinary:', deleteError);
+      // Don't fail the order if deletion fails, just log it
+    }
+    
     delete ctx.session.pendingAccountId;
     delete ctx.session.pendingPaymentMethod;
     delete ctx.session.pendingAccountPrice;

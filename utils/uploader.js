@@ -26,4 +26,20 @@ async function cloudinaryUploader(buffer) {
   }
 }
 
-module.exports = cloudinaryUploader;
+async function deleteFromCloudinary(imageUrl) {
+  try {
+    // Extract public_id from the Cloudinary URL
+    const urlParts = imageUrl.split('/');
+    const publicIdWithExtension = urlParts[urlParts.length - 1];
+    const publicId = publicIdWithExtension.split('.')[0];
+    
+    const result = await cloudinary.uploader.destroy(publicId);
+    console.log('Cloudinary delete result:', result);
+    return result;
+  } catch (error) {
+    console.error('Error deleting from Cloudinary:', error);
+    throw error;
+  }
+}
+
+module.exports = { cloudinaryUploader, deleteFromCloudinary };
