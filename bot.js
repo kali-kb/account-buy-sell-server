@@ -880,6 +880,30 @@ bot.on('photo', async (ctx) => {
       throw new Error(errorData.error || 'Failed to create order');
     }
 
+    const order = await safeJsonParse(orderResponse);
+
+    // Save transaction record after successful order creation
+    console.log("verificationData", verificationData)
+    try {
+      const saveTransactionResponse = await fetch(`${process.env.CBE_VERIFIER_URL}/save-transaction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionNumber: verificationData.data.transactionNumber,
+          amount: amount,
+          receiver: verificationData.data.receiver,
+        })
+      });
+
+      if (!saveTransactionResponse.ok) {
+        console.error('Failed to save transaction record:', await saveTransactionResponse.text());
+        // Don't fail the order if transaction saving fails, just log it
+      }
+    } catch (saveError) {
+      console.error('Error saving transaction record:', saveError);
+      // Don't fail the order if transaction saving fails
+    }
+
     await ctx.reply('✅ CBE payment verified and order created successfully!');
     
     // Delete the uploaded image from Cloudinary
