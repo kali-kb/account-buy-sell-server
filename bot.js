@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const { Redis } = require('@upstash/redis');
 const FormData = require('form-data');
 const { cloudinaryUploader, deleteFromCloudinary } = require('./utils/uploader.js');
+const logger = require('./utils/logger');
 
 dotenv.config();
 
@@ -48,7 +49,7 @@ const safeJsonParse = async (response) => {
   try {
     return JSON.parse(text);
   } catch (error) {
-    console.error('JSON parse error:', error, 'Response text:', text);
+    logger.error('JSON parse error', { error: error.message, responseText: text });
     return null;
   }
 };
@@ -73,7 +74,7 @@ bot.command('start', async (ctx) => {
     if (res.ok) {
         userData = await safeJsonParse(res);
         if (userData) {
-            console.log('User exists:', userData);
+            logger.info('User exists', { userId: userData.id, username: userData.username });
         }
     } else if (res.status === 404) {
         // User not found, create one.
@@ -86,11 +87,11 @@ bot.command('start', async (ctx) => {
         if (createRes.ok) {
             userData = await safeJsonParse(createRes);
             if (userData) {
-                console.log('User created:', userData);
+                logger.info('User created', { userId: userData.id, username: userData.username });
             }
         } else {
             const err = await safeJsonParse(createRes);
-            console.error('Failed to create user:', err);
+            logger.error('Failed to create user', { error: err, telegram_user_id, username });
             // Check for specific username error from backend
             if (createRes.status === 400 && err?.error?.includes("Username is required")) {
                 await ctx.reply('Welcome! To use this bot, you must have a public Telegram username. Please set one in your Telegram settings and then type /start again.');
@@ -100,10 +101,10 @@ bot.command('start', async (ctx) => {
     } else {
         // Handle other HTTP errors
         const err = await safeJsonParse(res);
-        console.error('Failed to fetch user:', err);
+        logger.error('Failed to fetch user', { error: err, telegram_user_id });
     }
   } catch (e) {
-    console.error('Error creating or fetching user on start:', e);
+    logger.error('Error creating or fetching user on start', { error: e.message, telegram_user_id });
   }
 
 
@@ -166,7 +167,7 @@ bot.command('balance', async (ctx) => {
       ctx.reply('Failed to fetch balance. Please try again later.');
     }
   } catch (error) {
-    console.error('Error fetching balance:', error);
+    logger.error('Error fetching balance', { error: error.message, stack: error.stack, userId: ctx.session.user?.id });
     ctx.reply('An error occurred while fetching your balance.');
   }
 });
@@ -190,7 +191,7 @@ async function sendOrdersPage(ctx, title = '📄 Your Orders', edit = false) {
       try {
         return await ctx.editMessageText(text, { reply_markup: { inline_keyboard: [] } });
       } catch (e) {
-        if (!e.message.includes('message is not modified')) console.error(e);
+        if (!e.message.includes('message is not modified')) logger.error('Error in sendOrdersPage', { error: e.message, stack: e.stack });
         return;
       }
     }
@@ -314,7 +315,7 @@ async function fetchAndShowPurchases(ctx) {
     await sendOrdersPage(ctx, ctx.session.orders_title);
 
   } catch (error) {
-    console.error('Error in fetchAndShowPurchases:', error);
+    logger.error('Error in fetchAndShowPurchases', { error: error.message, stack: error.stack, userId: ctx.session.user?.id });
     await ctx.reply('An error occurred while fetching your purchases.');
   }
 }
@@ -343,7 +344,7 @@ async function fetchAndShowSales(ctx) {
     await sendOrdersPage(ctx, ctx.session.orders_title);
 
   } catch (error) {
-    console.error('Error in fetchAndShowSales:', error);
+    logger.error('Error in fetchAndShowSales', { error: error.message, stack: error.stack, userId: ctx.session.user?.id });
     await ctx.reply('An error occurred while fetching your sales.');
   }
 }
@@ -422,7 +423,7 @@ bot.action(/initiate_transfer_(.+)/, async (ctx) => {
     const orderRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/orders/${orderId}`);
     if (!orderRes.ok) {
       const errorData = await safeJsonParse(orderRes);
-      console.error("Failed to fetch order details:", errorData);
+      logger.error('Failed to fetch order details', { error: errorData });
       return ctx.answerCbQuery('Error: Could not fetch order details.', { show_alert: true });
     }
 
@@ -447,7 +448,7 @@ bot.action(/initiate_transfer_(.+)/, async (ctx) => {
 
     await ctx.answerCbQuery();
   } catch (e) {
-    console.error('Error in initiate_transfer action:', e);
+    logger.error('Error in initiate_transfer action', { error: e.message, stack: e.stack });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
 });
@@ -466,7 +467,7 @@ bot.action(/transfer_complete_(.+)/, async (ctx) => {
 
     if (!updateRes.ok) {
       const errorData = await safeJsonParse(updateRes);
-      console.error("Failed to update order status:", errorData);
+      logger.error('Failed to update order status', { error: errorData });
       return ctx.answerCbQuery('Error: Could not update order status.', { show_alert: true });
     }
 
@@ -474,12 +475,12 @@ bot.action(/transfer_complete_(.+)/, async (ctx) => {
     // 2. Fetch order details to get seller ID from account owner
     const orderRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/orders/${orderId}`);
     if (!orderRes.ok) {
-      console.error('Failed to fetch order details after update');
+      logger.error('Failed to fetch order details after update');
       return;
     }
     const orderData = await safeJsonParse(orderRes);
     if (!orderData) {
-      console.error('Failed to parse order details after update');
+      logger.error('Failed to parse order details after update');
       return;
     }
     const { buyer, account } = orderData;
@@ -496,7 +497,7 @@ bot.action(/transfer_complete_(.+)/, async (ctx) => {
       const sellerData = await safeJsonParse(sellerRes);
       const currentBalance = sellerData.balance || 0;
       const newBalance = currentBalance + account.price;  // Use account price instead of order amount
-      console.log(`Crediting seller ${sellerId} with amount ${account.price}. Current balance: ${currentBalance}, New balance: ${newBalance}`);
+      logger.info('Crediting seller balance', { sellerId, amount: account.price, currentBalance, newBalance });
       // Update seller's balance - send only balance field
       const updateBalanceRes = await fetch(`${process.env.API_URL || `http://localhost:3001`}/users/${sellerId}`, {
         method: 'PUT',
@@ -507,10 +508,9 @@ bot.action(/transfer_complete_(.+)/, async (ctx) => {
       if (!updateBalanceRes.ok) {
         throw new Error('Failed to update seller balance');
       }
-      // Log successful update
-      console.log(`Updated seller ${sellerId} balance to ${newBalance}`);
+      logger.info('Updated seller balance', { sellerId, newBalance });
     } catch (balanceError) {
-      console.error('Error crediting seller balance:', balanceError);
+      logger.error('Error crediting seller balance', { error: balanceError.message, stack: balanceError.stack });
       await ctx.reply(`⚠️ Account transfer completed but failed to credit seller's balance. Please contact support.`);
     }
 
@@ -523,12 +523,12 @@ bot.action(/transfer_complete_(.+)/, async (ctx) => {
     try {
       await bot.telegram.sendMessage(buyer.telegram_user_id, buyerMessage);
     } catch (e) {
-      console.error(`Failed to send completion message to buyer ${buyer.telegram_user_id}`, e);
+      logger.error('Failed to send completion message to buyer', { buyerId: buyer.telegram_user_id, error: e.message, stack: e.stack });
       // Inform seller that buyer notification failed
       await ctx.followUp(`Could not send a notification to the buyer (@${buyer.username}). Please inform them of the completion manually.`);
     }
   } catch (e) {
-    console.error('Error in transfer_complete action:', e);
+    logger.error('Error in transfer_complete action', { error: e.message, stack: e.stack });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
 });
@@ -555,7 +555,7 @@ bot.action(/cancel_order_(.+)/, async (ctx) => {
       await fetchAndShowPurchases(ctx);
     }
   } catch (e) {
-    console.error('Error cancelling order:', e);
+    logger.error('Error cancelling order', { error: e.message, stack: e.stack });
     await ctx.reply('❌ An error occurred while cancelling the order.');
   }
 });
@@ -661,7 +661,7 @@ bot.on('callback_query', async (ctx, next) => {
 
     // The rest of the logic is now handled by the text handler below
   } catch (error) {
-    console.error('Error in order callback:', error);
+    logger.error('Error in order callback', { error: error.message, stack: error.stack });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
 });
@@ -682,7 +682,7 @@ bot.action(/pay_method_telebirr_(.+)/, async (ctx) => {
       }
     }
   } catch (error) {
-    console.error('Error fetching account price:', error);
+    logger.error('Error fetching account price', { error: error.message, stack: error.stack });
   }
   
   await ctx.reply('Please enter your Telebirr receipt number:');
@@ -705,7 +705,7 @@ bot.action(/pay_method_cbe_(.+)/, async (ctx) => {
       }
     }
   } catch (error) {
-    console.error('Error fetching account price:', error);
+    logger.error('Error fetching account price', { error: error.message, stack: error.stack });
   }
   
   await ctx.reply('Please upload a screenshot of your CBE payment receipt (as an image):');
@@ -771,7 +771,7 @@ bot.on('text', async (ctx) => {
       await ctx.reply(`✅ Payment verified and order created successfully!\nOrder ID: ${order.id}`);
 
     } catch (error) {
-      console.error('Error processing receipt:', error);
+      logger.error('Error processing receipt', { error: error.message, stack: error.stack });
       await ctx.reply(`❌ An error occurred: ${error.message}`);
       // Clear session on error
       delete ctx.session.pendingAccountId;
@@ -786,7 +786,7 @@ bot.on('photo', async (ctx) => {
 
   const accountId = ctx.session.pendingAccountId;
   const accountPrice = ctx.session.pendingAccountPrice;
-  console.log("account price: ", accountPrice)
+  logger.debug("Account price retrieved", { accountPrice })
   await ctx.reply('🔍 Verifying your CBE payment, please wait...');
 
   try {
@@ -801,30 +801,30 @@ bot.on('photo', async (ctx) => {
     const cloudinaryUrl = await cloudinaryUploader(Buffer.from(buffer));
 
     // Verify payment using new API
-    console.log("url", `${process.env.CBE_VERIFIER_URL}/parse?image_url=${cloudinaryUrl}`)
+    logger.debug("CBE verification URL", { url: `${process.env.CBE_VERIFIER_URL}/parse?image_url=${cloudinaryUrl}` })
     const verifyRes = await fetch(`${process.env.CBE_VERIFIER_URL}/parse?image_url=${cloudinaryUrl}`);
     // const verifyRes = await fetch(`${process.env.CBE_VERIFIER_URL}/parse?image_url=${encodeURIComponent(cloudinaryUrl)}`);
     if (!verifyRes.ok) {
-      console.error('Failed to verify payment:', verifyRes.status, verifyRes.statusText);
+      logger.error('Failed to verify payment', { status: verifyRes.status, statusText: verifyRes.statusText });
       // Delete the uploaded image even on verification failure
       try {
         await deleteFromCloudinary(cloudinaryUrl);
-        console.log('Deleted failed verification image from Cloudinary:', cloudinaryUrl);
+        logger.debug('Deleted failed verification image from Cloudinary', { cloudinaryUrl });
       } catch (deleteError) {
-        console.error('Failed to delete image from Cloudinary:', deleteError);
+        logger.error('Failed to delete image from Cloudinary', { error: deleteError.message, stack: deleteError.stack });
       }
       throw new Error('Failed to verify payment');
     }
 
     const verificationData = await verifyRes.json();
-    console.log("verification data", verificationData)
+    logger.debug("CBE verification data received", { verificationData })
     if (!verificationData.success) {
       // Delete the uploaded image even on verification failure
       try {
         await deleteFromCloudinary(cloudinaryUrl);
-        console.log('Deleted failed verification image from Cloudinary:', cloudinaryUrl);
+        logger.debug('Deleted failed verification image from Cloudinary', { cloudinaryUrl });
       } catch (deleteError) {
-        console.error('Failed to delete image from Cloudinary:', deleteError);
+        logger.error('Failed to delete image from Cloudinary', { error: deleteError.message, stack: deleteError.stack });
       }
       
       if (verificationData.message === "transaction already exist") {
@@ -856,9 +856,9 @@ bot.on('photo', async (ctx) => {
     if (amount !== accountPrice) {
       try {
         await deleteFromCloudinary(cloudinaryUrl);
-        console.log('Deleted image from Cloudinary:', cloudinaryUrl);
+        logger.debug('Deleted image from Cloudinary', { cloudinaryUrl });
       } catch (deleteError) {
-        console.error('Failed to delete image from Cloudinary:', deleteError);
+        logger.error('Failed to delete image from Cloudinary', { error: deleteError.message, stack: deleteError.stack });
       }
       throw new Error(`Amount ${amount} ETB does not match required price ${accountPrice} ETB`);
     }
@@ -883,7 +883,7 @@ bot.on('photo', async (ctx) => {
     const order = await safeJsonParse(orderResponse);
 
     // Save transaction record after successful order creation
-    console.log("verificationData", verificationData)
+    logger.debug("Transaction verification data", { verificationData })
     try {
       const saveTransactionResponse = await fetch(`${process.env.CBE_VERIFIER_URL}/save-transaction`, {
         method: 'POST',
@@ -896,11 +896,11 @@ bot.on('photo', async (ctx) => {
       });
 
       if (!saveTransactionResponse.ok) {
-        console.error('Failed to save transaction record:', await saveTransactionResponse.text());
+        logger.error('Failed to save transaction record', { response: await saveTransactionResponse.text() });
         // Don't fail the order if transaction saving fails, just log it
       }
     } catch (saveError) {
-      console.error('Error saving transaction record:', saveError);
+      logger.error('Error saving transaction record', { error: saveError.message, stack: saveError.stack });
       // Don't fail the order if transaction saving fails
     }
 
@@ -909,9 +909,9 @@ bot.on('photo', async (ctx) => {
     // Delete the uploaded image from Cloudinary
     try {
       await deleteFromCloudinary(cloudinaryUrl);
-      console.log('Successfully deleted image from Cloudinary:', cloudinaryUrl);
+      logger.debug('Successfully deleted image from Cloudinary', { cloudinaryUrl });
     } catch (deleteError) {
-      console.error('Failed to delete image from Cloudinary:', deleteError);
+      logger.error('Failed to delete image from Cloudinary', { error: deleteError.message, stack: deleteError.stack });
       // Don't fail the order if deletion fails, just log it
     }
     
@@ -920,7 +920,7 @@ bot.on('photo', async (ctx) => {
     delete ctx.session.pendingAccountPrice;
 
   } catch (error) {
-    console.error('Error verifying CBE payment:', error);
+    logger.error('Error verifying CBE payment', { error: error.message, stack: error.stack });
     await ctx.reply(`❌ An error occurred: ${error.message}`);
     // Clean up session
     delete ctx.session.pendingAccountId;
@@ -931,7 +931,7 @@ bot.on('photo', async (ctx) => {
 
 // Error handling
 bot.catch((err, ctx) => {
-  console.error(`Error for ${ctx.updateType}:`, err);
+  logger.error('Bot error', { updateType: ctx.updateType, error: err.message, stack: err.stack });
   ctx.reply('An error occurred while processing your request.');
 });
 
@@ -974,7 +974,7 @@ bot.action(/delete_account_(.+)/, async (ctx) => {
 
     await ctx.answerCbQuery();
   } catch (e) {
-    console.error('Error in delete_account action:', e);
+    logger.error('Error in delete_account action', { error: e.message, stack: e.stack });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
 });
@@ -997,7 +997,7 @@ bot.action(/confirm_delete_(.+)/, async (ctx) => {
 
     if (!deleteRes.ok) {
       const errorData = await safeJsonParse(deleteRes);
-      console.error("Failed to delete account:", errorData);
+      logger.error("Failed to delete account", { errorData });
       await ctx.editMessageText('❌ Failed to delete account. Please try again later.');
       return ctx.answerCbQuery('Delete failed', { show_alert: true });
     }
@@ -1013,7 +1013,7 @@ bot.action(/confirm_delete_(.+)/, async (ctx) => {
         try {
           await ctx.telegram.sendMessage(buyer.telegram_user_id, msg);
         } catch (e) {
-          console.error(`Failed to notify buyer ${buyer.telegram_user_id}:`, e);
+          logger.error('Failed to notify buyer', { buyerId: buyer.telegram_user_id, error: e.message, stack: e.stack });
         }
       }
     }
@@ -1022,7 +1022,7 @@ bot.action(/confirm_delete_(.+)/, async (ctx) => {
     await ctx.answerCbQuery('Account deleted successfully');
 
   } catch (e) {
-    console.error('Error in confirm_delete action:', e);
+    logger.error('Error in confirm_delete action', { error: e.message, stack: e.stack });
     await ctx.editMessageText('❌ An error occurred while deleting the account.', { show_alert: true });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
@@ -1068,7 +1068,7 @@ bot.action('withdraw_balance', async (ctx) => {
             
             if (withdrawalRes.ok) {
                 const withdrawal = await withdrawalRes.json();
-                console.log('Withdrawal created:', withdrawal);
+                logger.info('Withdrawal created', { withdrawalId: withdrawal.id, amount: withdrawal.amount, userId: user.id });
                 const reasonMessages = {
                   order_refund: 'Refund processed due to order cancellation',
                   seller_payout: 'Seller payout initiated - funds will be processed within 24 hours'
@@ -1082,7 +1082,7 @@ bot.action('withdraw_balance', async (ctx) => {
             ctx.reply('Failed to fetch your balance. Please try again later.');
         }
     } catch (error) {
-        console.error('Error processing withdrawal:', error);
+        logger.error('Error processing withdrawal', { error: error.message, stack: error.stack });
         ctx.reply('An error occurred while processing your withdrawal.');
     }
 });
@@ -1092,13 +1092,13 @@ bot.action('withdraw_balance', async (ctx) => {
 // Start the bot
 bot.launch()
   .then(() => {
-    console.log('Bot started successfully');
+    logger.info('Bot started successfully');
     if (!MINI_APP_URL) {
-      console.warn('Warning: MINI_APP_URL is not configured in environment variables');
+      logger.warn('MINI_APP_URL is not configured in environment variables');
     }
   })
   .catch((err) => {
-    console.error('Error starting bot:', err);
+    logger.error('Error starting bot', { error: err.message, stack: err.stack });
   });
 
 // Enable graceful stop
