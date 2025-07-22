@@ -1133,16 +1133,16 @@ bot.action('withdraw_balance', async (ctx) => {
 
 
 // Start the bot, uncomment this on dev mode
-bot.launch()
-  .then(() => {
-    logger.info('Bot started successfully');
-    if (!MINI_APP_URL) {
-      logger.warn('MINI_APP_URL is not configured in environment variables');
-    }
-  })
-  .catch((err) => {
-    logger.error('Error starting bot', { error: err.message, stack: err.stack });
-  });
+// bot.launch()
+//   .then(() => {
+//     logger.info('Bot started successfully');
+//     if (!MINI_APP_URL) {
+//       logger.warn('MINI_APP_URL is not configured in environment variables');
+//     }
+//   })
+//   .catch((err) => {
+//     logger.error('Error starting bot', { error: err.message, stack: err.stack });
+//   });
 
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));

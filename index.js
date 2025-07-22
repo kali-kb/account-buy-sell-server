@@ -402,6 +402,39 @@ app.get("/accounts/:id", async (req, res) => {
   }
 });
 
+// Add this endpoint to update an account
+app.put('/accounts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, platform, url, price, subscriber_count, is_monetized, creation_year } = req.body;
+    
+    // First check if the account exists
+    const existingAccount = await db.select().from(accounts).where(eq(accounts.id, id));
+    if (existingAccount.length === 0) {
+      return res.status(404).json({ error: "Account not found" });
+    }
+    
+    // Update the account
+    const result = await db.update(accounts)
+      .set({
+        name,
+        platform,
+        url,
+        price,
+        subscriber_count,
+        is_monetized,
+        creation_year,
+        updated_at: new Date()
+      })
+      .where(eq(accounts.id, id))
+      .returning();
+    
+    res.json(result[0]);
+  } catch (error) {
+    console.error("Error updating account:", error);
+    res.status(500).json({ error: "Failed to update account" });
+  }
+});
 
 app.post("/accounts/:id/reserve", async (req, res) => {
   const { id } = req.params;
