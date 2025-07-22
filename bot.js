@@ -413,6 +413,49 @@ bot.hears('📄 Rules and guidelines', (ctx) => {
   ctx.reply(rulesMessage, { parse_mode: 'Markdown' });
 });
 
+
+// Handle mark as sold callback
+bot.action(/mark_sold_(.+)/, async (ctx) => {
+  try {
+    const accountId = ctx.match[1];
+    const telegram_user_id = ctx.from.id.toString();
+    
+    // Get user ID from telegram user ID
+    const userRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/users/by-telegram/${telegram_user_id}`);
+    if (!userRes.ok) {
+      return await ctx.answerCbQuery('You are not registered. Please /start the bot first.', { show_alert: true });
+    }
+    
+    const userData = await safeJsonParse(userRes);
+    if (!userData) {
+      return await ctx.answerCbQuery('Error fetching user data.', { show_alert: true });
+    }
+    
+    const sellerId = userData.id;
+    
+    // Call the mark-as-sold endpoint
+    const markSoldRes = await fetch(`${process.env.API_URL || 'http://localhost:3001'}/accounts/${accountId}/mark-as-sold`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seller_id: sellerId })
+    });
+    
+    if (markSoldRes.ok) {
+      await ctx.answerCbQuery('✅ Account marked as sold successfully!', { show_alert: true });
+      
+      // Send confirmation message
+      await ctx.reply('Your account has been marked as sold and will no longer appear in search results.');
+    } else {
+      const errorData = await safeJsonParse(markSoldRes);
+      const errorMessage = errorData?.error || 'Failed to mark account as sold';
+      await ctx.answerCbQuery(errorMessage, { show_alert: true });
+    }
+  } catch (error) {
+    logger.error('Error marking account as sold', { error: error.message, stack: error.stack });
+    await ctx.answerCbQuery('An error occurred while marking the account as sold.', { show_alert: true });
+  }
+});
+
 // Handle order button callback
 
 bot.action(/initiate_transfer_(.+)/, async (ctx) => {
@@ -1089,17 +1132,17 @@ bot.action('withdraw_balance', async (ctx) => {
 
 
 
-// Start the bot
-// bot.launch()
-//   .then(() => {
-//     logger.info('Bot started successfully');
-//     if (!MINI_APP_URL) {
-//       logger.warn('MINI_APP_URL is not configured in environment variables');
-//     }
-//   })
-//   .catch((err) => {
-//     logger.error('Error starting bot', { error: err.message, stack: err.stack });
-//   });
+// Start the bot, uncomment this on dev mode
+bot.launch()
+  .then(() => {
+    logger.info('Bot started successfully');
+    if (!MINI_APP_URL) {
+      logger.warn('MINI_APP_URL is not configured in environment variables');
+    }
+  })
+  .catch((err) => {
+    logger.error('Error starting bot', { error: err.message, stack: err.stack });
+  });
 
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
@@ -1107,6 +1150,3 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 module.exports = { bot };
 
-// process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-// module.exports = { bot };

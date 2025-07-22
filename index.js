@@ -861,6 +861,41 @@ app.get('/accounts/:id/orders', async (req, res) => {
   }
 });
 
+// Mark account as sold endpoint for seller reporting
+app.put('/accounts/:id/mark-as-sold', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { seller_id } = req.body;
+
+    if (!seller_id) {
+      return res.status(400).json({ error: "Seller ID is required" });
+    }
+
+    // Verify the account belongs to the seller
+    const account = await db.select()
+      .from(accounts)
+      .where(and(eq(accounts.id, id), eq(accounts.owner_id, seller_id)));
+
+    if (account.length === 0) {
+      return res.status(404).json({ error: "Account not found or you don't own this account" });
+    }
+
+    // Update account status to sold
+    const result = await db.update(accounts)
+      .set({
+        status: 'sold',
+        updated_at: new Date()
+      })
+      .where(eq(accounts.id, id))
+      .returning();
+
+    res.json({ success: true, account: result[0] });
+  } catch (error) {
+    console.error("Error marking account as sold:", error);
+    res.status(500).json({ error: "Failed to mark account as sold" });
+  }
+});
+
 // Create withdrawal endpoint
 app.post('/withdrawals', async (req, res) => {
   try {
