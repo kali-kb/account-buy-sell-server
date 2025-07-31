@@ -9,6 +9,7 @@ const users = pgTable('users', {
     bank_name: text('bank_name'),
     account_number: text('account_number'),
     balance: integer('balance').default(0),
+    last_visit: timestamp('last_visit'),
 }, (table) => ({
     telegramUserIdIdx: index('users_telegram_user_id_idx').on(table.telegram_user_id),
 }));

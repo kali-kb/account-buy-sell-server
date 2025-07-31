@@ -31,6 +31,40 @@ const MINI_APP_URL = process.env.MINI_APP_URL;
 const REQUIRE_PAYMENT_SCREENSHOT = false; // Flag to toggle payment screenshot verification
 bot.use(session({ store: redisSession }));
 
+// Helper function to update last_visit
+async function updateUserVisit(userId) {
+  if (!userId) return;
+  try {
+    await fetch(`${process.env.API_URL || `http://localhost:3001`}/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ last_visit: new Date().toISOString() })
+    });
+    logger.info('User visit updated', { userId });
+  } catch (error) {
+    logger.error('Failed to update last_visit', { error: error.message, userId });
+  }
+}
+
+const VISIT_UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+// Middleware to update last_visit on user interaction
+bot.use(async (ctx, next) => {
+  // We need user data in the session for this to work
+  if (ctx.session && ctx.session.user && ctx.session.user.id) {
+    const now = new Date().getTime();
+    // Get last update time from session, default to 0 if not present
+    const lastVisitUpdate = ctx.session.lastVisitUpdate || 0;
+
+    if (now - lastVisitUpdate > VISIT_UPDATE_INTERVAL) {
+      await updateUserVisit(ctx.session.user.id);
+      // Store the new update time in the session
+      ctx.session.lastVisitUpdate = now;
+    }
+  }
+  return next();
+});
+
 // Welcome message and main keyboard
 const getMainKeyboard = () => {
   return Markup.keyboard([
@@ -107,6 +141,10 @@ bot.command('start', async (ctx) => {
     logger.error('Error creating or fetching user on start', { error: e.message, telegram_user_id });
   }
 
+  // Update last visit time
+  if (userData && userData.id) {
+    await updateUserVisit(userData.id);
+  }
 
   // Save user data in session (in-memory, per bot instance)
   if (userData) {

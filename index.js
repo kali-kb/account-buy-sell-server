@@ -86,20 +86,32 @@ app.get('/users/:id', async (req, res) => {
 app.put('/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { balance } = req.body;
+    const { balance, last_visit } = req.body;
 
-    console.log('Updating user balance:', id, balance);
+    const updateData = {};
+    if (balance !== undefined) {
+      updateData.balance = balance;
+    }
+    if (last_visit) {
+      updateData.last_visit = new Date(last_visit);
+    }
 
-    const result = await db.update(users).set({ balance }).where(eq(users.id, id)).returning();
-    console.log('Update result:', result);
+    if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: "No update data provided" });
+    }
+
+    console.log('Updating user:', id, updateData);
+
+    const result = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
+    
     if (result.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
     res.json(result[0]);
   } catch (error) {
-    console.error("Error updating user balance:", error);
-    res.status(500).json({ error: "Failed to update user balance" });
+    console.error("Error updating user:", error);
+    res.status(500).json({ error: "Failed to update user" });
   }
 });
 
