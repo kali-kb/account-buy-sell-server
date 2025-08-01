@@ -162,7 +162,16 @@ bot.command('start', async (ctx) => {
     };
   }
 
-  ctx.reply(welcomeMessage, getMainKeyboard());
+  try {
+    await ctx.reply(welcomeMessage, getMainKeyboard());
+  } catch (error) {
+    if (error.code === 403 && error.description.includes('bot was blocked by the user')) {
+      logger.warn('Bot was blocked by the user, skipping welcome message.', { userId: ctx.session.user?.id, telegram_user_id: ctx.from.id });
+    } else {
+      // Re-throw other errors
+      throw error;
+    }
+  }
 });
 
 // About command
@@ -1010,10 +1019,31 @@ bot.on('photo', async (ctx) => {
   }
 });
 
-// Error handling
+// Generic error handler
 bot.catch((err, ctx) => {
-  logger.error('Bot error', { updateType: ctx.updateType, error: err.message, stack: err.stack });
-  ctx.reply('An error occurred while processing your request.');
+  logger.error(`Ooops, encountered an error for ${ctx.updateType}`, { error: err.message, stack: err.stack, context: ctx });
+  // Handle specific Telegram errors
+  if (err instanceof require('telegraf').TelegramError) {
+    if (err.code === 403) {
+      logger.warn('Bot was blocked or kicked from a group.', { chatId: ctx.chat?.id });
+      // Optionally, you can remove the user/chat from your database
+    } else if (err.code === 400) {
+      logger.warn('Bad request error, possibly malformed message.', { description: err.description, chatId: ctx.chat?.id });
+    } else {
+      logger.error('Unhandled Telegram error', { errorCode: err.code, description: err.description });
+    }
+  } else {
+    logger.error('Non-Telegram error occurred', { error: err.toString() });
+  }
+
+  // Notify user if possible
+  try {
+    if (err.code !== 403) {
+        ctx.reply('An unexpected error occurred. Please try again later.');
+    }
+  } catch (e) {
+    logger.error('Failed to send error message to user', { error: e.message, chatId: ctx.chat?.id });
+  }
 });
 
 // Add this new handler for delete account confirmation

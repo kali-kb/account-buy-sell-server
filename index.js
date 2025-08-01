@@ -9,6 +9,7 @@ const { eq, like, ilike, gte, lte, and, or, sql, desc, inArray } = require("driz
 const { accounts, users, orders, transfers, withdrawals } = require("./db/schema");
 const axios = require("axios");
 const { Redis } = require("@upstash/redis");
+const compression = require('compression');
 
 // Initialize Redis client
 const redis = new Redis({
@@ -37,6 +38,7 @@ app.use((req, res, next) => {
 });
 
 // Middleware
+app.use(compression());
 app.use(express.json());
 app.use(cors(corsOptions));
 

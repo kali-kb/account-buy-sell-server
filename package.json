@@ -13,6 +13,7 @@
     "@telegraf/session": "^2.0.0-beta.7",
     "@upstash/redis": "^1.35.1",
     "axios": "^1.10.0",
+    "compression": "^1.7.4",
     "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
