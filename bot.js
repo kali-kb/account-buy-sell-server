@@ -462,7 +462,7 @@ bot.hears('📄 Rules and guidelines', (ctx) => {
 
 
 // Handle mark as sold callback
-bot.action(/mark_sold_(.+)/, async (ctx) => {
+bot.action(/mark_sold_(.+)/, safeNext(async (ctx) => {
   try {
     const accountId = ctx.match[1];
     const telegram_user_id = ctx.from.id.toString();
@@ -501,11 +501,11 @@ bot.action(/mark_sold_(.+)/, async (ctx) => {
     logger.error('Error marking account as sold', { error: error.message, stack: error.stack });
     await ctx.answerCbQuery('An error occurred while marking the account as sold.', { show_alert: true });
   }
-});
+}));
 
 // Handle order button callback
 
-bot.action(/initiate_transfer_(.+)/, async (ctx) => {
+bot.action(/initiate_transfer_(.+)/, safeNext(async (ctx) => {
   try {
     const orderId = ctx.match[1];
     
@@ -541,9 +541,9 @@ bot.action(/initiate_transfer_(.+)/, async (ctx) => {
     logger.error('Error in initiate_transfer action', { error: e.message, stack: e.stack });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
-});
+}));
 
-bot.action(/transfer_complete_(.+)/, async (ctx) => {
+bot.action(/transfer_complete_(.+)/, safeNext(async (ctx) => {
   try {
     await ctx.answerCbQuery('Processing completion...');
     const orderId = ctx.match[1];
@@ -621,10 +621,10 @@ bot.action(/transfer_complete_(.+)/, async (ctx) => {
     logger.error('Error in transfer_complete action', { error: e.message, stack: e.stack });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
-});
+}));
 
 // Add cancel order handler
-bot.action(/cancel_order_(.+)/, async (ctx) => {
+bot.action(/cancel_order_(.+)/, safeNext(async (ctx) => {
   const orderId = ctx.match[1];
   try {
     await ctx.answerCbQuery('Cancelling order...');
@@ -648,11 +648,11 @@ bot.action(/cancel_order_(.+)/, async (ctx) => {
     logger.error('Error cancelling order', { error: e.message, stack: e.stack });
     await ctx.reply('❌ An error occurred while cancelling the order.');
   }
-});
+}));
 
 
 // Update the generic callback_query handler to allow other handlers to run if not handled
-bot.on('callback_query', async (ctx, next) => {
+bot.on('callback_query', safeNext(async (ctx, next) => {
   const callbackData = ctx.callbackQuery.data;
   if (!callbackData?.startsWith('order_account_')) {
     // Not handled here, let other handlers process it
@@ -754,10 +754,10 @@ bot.on('callback_query', async (ctx, next) => {
     logger.error('Error in order callback', { error: error.message, stack: error.stack });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
-});
+}));
 
 // Telebirr: ask for receipt number
-bot.action(/pay_method_telebirr_(.+)/, async (ctx) => {
+bot.action(/pay_method_telebirr_(.+)/, safeNext(async (ctx) => {
   const accountId = ctx.match[1];
   ctx.session.pendingAccountId = accountId;
   ctx.session.pendingPaymentMethod = 'telebirr';
@@ -777,10 +777,10 @@ bot.action(/pay_method_telebirr_(.+)/, async (ctx) => {
   
   await ctx.reply('Please enter your Telebirr receipt number:');
   await ctx.answerCbQuery();
-});
+}));
 
 // CBE: ask for image
-bot.action(/pay_method_cbe_(.+)/, async (ctx) => {
+bot.action(/pay_method_cbe_(.+)/, safeNext(async (ctx) => {
   const accountId = ctx.match[1];
   ctx.session.pendingAccountId = accountId;
   ctx.session.pendingPaymentMethod = 'cbe';
@@ -800,10 +800,10 @@ bot.action(/pay_method_cbe_(.+)/, async (ctx) => {
   
   await ctx.reply('Please upload a screenshot of your CBE payment receipt (as an image):');
   await ctx.answerCbQuery();
-});
+}));
 
 // Handle receipt number submission
-bot.on('text', async (ctx) => {
+bot.on('text', safeNext(async (ctx) => {
   if (!ctx.session?.pendingAccountId || !ctx.message.text) return;
 
   const paymentMethod = ctx.session.pendingPaymentMethod;
@@ -868,10 +868,10 @@ bot.on('text', async (ctx) => {
       delete ctx.session.pendingAccountPrice;
     }
   }
-});
+}));
 
 // New handler for CBE payment screenshot
-bot.on('photo', async (ctx) => {
+bot.on('photo', safeNext(async (ctx) => {
   if (!ctx.session?.pendingAccountId || ctx.session.pendingPaymentMethod !== 'cbe') return;
 
   const accountId = ctx.session.pendingAccountId;
@@ -1017,37 +1017,12 @@ bot.on('photo', async (ctx) => {
     delete ctx.session.pendingPaymentMethod;
     delete ctx.session.pendingAccountPrice;
   }
-});
+}));
 
-// Generic error handler
-bot.catch((err, ctx) => {
-  logger.error(`Ooops, encountered an error for ${ctx.updateType}`, { error: err.message, stack: err.stack, context: ctx });
-  // Handle specific Telegram errors
-  if (err instanceof require('telegraf').TelegramError) {
-    if (err.code === 403) {
-      logger.warn('Bot was blocked or kicked from a group.', { chatId: ctx.chat?.id });
-      // Optionally, you can remove the user/chat from your database
-    } else if (err.code === 400) {
-      logger.warn('Bad request error, possibly malformed message.', { description: err.description, chatId: ctx.chat?.id });
-    } else {
-      logger.error('Unhandled Telegram error', { errorCode: err.code, description: err.description });
-    }
-  } else {
-    logger.error('Non-Telegram error occurred', { error: err.toString() });
-  }
 
-  // Notify user if possible
-  try {
-    if (err.code !== 403) {
-        ctx.reply('An unexpected error occurred. Please try again later.');
-    }
-  } catch (e) {
-    logger.error('Failed to send error message to user', { error: e.message, chatId: ctx.chat?.id });
-  }
-});
 
 // Add this new handler for delete account confirmation
-bot.action(/delete_account_(.+)/, async (ctx) => {
+bot.action(/delete_account_(.+)/, safeNext(async (ctx) => {
   try {
     const accountId = ctx.match[1];
     
@@ -1088,16 +1063,16 @@ bot.action(/delete_account_(.+)/, async (ctx) => {
     logger.error('Error in delete_account action', { error: e.message, stack: e.stack });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
-});
+}));
 
 // Handle cancel delete
-bot.action('cancel_delete', async (ctx) => {
+bot.action('cancel_delete', safeNext(async (ctx) => {
   await ctx.editMessageText('❌ Account deletion cancelled.');
   await ctx.answerCbQuery('Deletion cancelled');
-});
+}));
 
 // Handle confirm delete
-bot.action(/confirm_delete_(.+)/, async (ctx) => {
+bot.action(/confirm_delete_(.+)/, safeNext(async (ctx) => {
   try {
     const accountId = ctx.match[1];
     
@@ -1137,11 +1112,11 @@ bot.action(/confirm_delete_(.+)/, async (ctx) => {
     await ctx.editMessageText('❌ An error occurred while deleting the account.', { show_alert: true });
     await ctx.answerCbQuery('An unexpected error occurred.', { show_alert: true });
   }
-});
+}));
 
 
 // Withdraw balance action
-bot.action('withdraw_balance', async (ctx) => {
+bot.action('withdraw_balance', safeNext(async (ctx) => {
     await ctx.answerCbQuery('Processing withdrawal...');
     const { user } = ctx.session;
     
@@ -1196,7 +1171,7 @@ bot.action('withdraw_balance', async (ctx) => {
         logger.error('Error processing withdrawal', { error: error.message, stack: error.stack });
         ctx.reply('An error occurred while processing your withdrawal.');
     }
-});
+}));
 
 
 
