@@ -10,6 +10,19 @@ const { accounts, users, orders, transfers, withdrawals } = require("./db/schema
 const axios = require("axios");
 const { Redis } = require("@upstash/redis");
 const compression = require('compression');
+const logger = require("./utils/logger");
+
+// Global error handler for unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', { promise, reason: reason.stack || reason });
+  // Application specific logging, throwing an error, or other logic here
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', { error: error.stack || error });
+  // It's recommended to restart the process after an uncaught exception.
+  process.exit(1);
+});
 
 // Initialize Redis client
 const redis = new Redis({
