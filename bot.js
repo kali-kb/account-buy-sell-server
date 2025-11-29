@@ -29,6 +29,25 @@ const redisSession = {
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const MINI_APP_URL = process.env.MINI_APP_URL;
 const REQUIRE_PAYMENT_SCREENSHOT = false; // Flag to toggle payment screenshot verification
+
+// Maintenance mode middleware - MUST be before session to avoid Redis connection errors
+const MAINTENANCE_MODE = process.env.MAINTAINANCE_MODE === 'true';
+bot.use(async (ctx, next) => {
+  if (MAINTENANCE_MODE) {
+    const maintenanceMessage = `🔧 *Maintenance Mode*\n\n` +
+      `The bot is currently undergoing maintenance and will be back shortly.\n\n` +
+      `Please try again later. Thank you for your patience! 🙏`;
+    
+    try {
+      await ctx.reply(maintenanceMessage, { parse_mode: 'Markdown' });
+    } catch (e) {
+      // Ignore errors (e.g., if bot was blocked)
+    }
+    return; // Don't process any further
+  }
+  return next();
+});
+
 bot.use(session({ store: redisSession }));
 
 // Helper function to update last_visit
@@ -1201,16 +1220,16 @@ bot.action('withdraw_balance', async (ctx) => {
 
 
 // Start the bot, uncomment this on dev mode
-// bot.launch()
-//   .then(() => {
-//     logger.info('Bot started successfully');
-//     if (!MINI_APP_URL) {
-//       logger.warn('MINI_APP_URL is not configured in environment variables');
-//     }
-//   })
-//   .catch((err) => {
-//     logger.error('Error starting bot', { error: err.message, stack: err.stack });
-//   });
+bot.launch()
+  .then(() => {
+    logger.info('Bot started successfully');
+    if (!MINI_APP_URL) {
+      logger.warn('MINI_APP_URL is not configured in environment variables');
+    }
+  })
+  .catch((err) => {
+    logger.error('Error starting bot', { error: err.message, stack: err.stack });
+  });
 
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
