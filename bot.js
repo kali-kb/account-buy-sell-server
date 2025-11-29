@@ -8,21 +8,42 @@ const logger = require('./utils/logger');
 dotenv.config();
 
 // Initialize Redis client
-const redis = new Redis({
-  url: process.env.REDIS_URL,
-  token: process.env.REDIS_TOKEN,
-});
+let redis;
+try {
+  redis = new Redis({
+    url: process.env.REDIS_URL,
+    token: process.env.REDIS_TOKEN,
+  });
+} catch (e) {
+  logger.error('Failed to initialize Redis client', { error: e.message });
+}
 
 const redisSession = {
   get: async (key) => {
-    const data = await redis.get(key);
-    return data || {};
+    if (!redis) return {};
+    try {
+      const data = await redis.get(key);
+      return data || {};
+    } catch (e) {
+      logger.error('Redis get error', { error: e.message });
+      return {};
+    }
   },
   set: async (key, value) => {
-    await redis.set(key, value);
+    if (!redis) return;
+    try {
+      await redis.set(key, value);
+    } catch (e) {
+      logger.error('Redis set error', { error: e.message });
+    }
   },
   delete: async (key) => {
-    await redis.del(key);
+    if (!redis) return;
+    try {
+      await redis.del(key);
+    } catch (e) {
+      logger.error('Redis delete error', { error: e.message });
+    }
   }
 };
 
