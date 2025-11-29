@@ -1,0 +1,23 @@
+name: Redis Keep Alive
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  ping-redis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Redis
+        run: |
+          response=$(curl -s -X POST "${{ secrets.REDIS_URL }}/ping" \
+            -H "Authorization: Bearer ${{ secrets.REDIS_TOKEN }}")
+          echo "Redis response: $response"
+          if [[ "$response" == *"PONG"* ]]; then
+            echo "✅ Redis is alive"
+          else
+            echo "⚠️ Unexpected response: $response"
+            exit 1
+          fi
